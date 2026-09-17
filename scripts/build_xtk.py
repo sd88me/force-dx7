@@ -134,28 +134,39 @@ def blank_mapping(doc):
 
 def fix_midi_routes(doc, control_channel):
     """Point data.midiInputRoute/midiOutputRoute at this project's own ALSA
-    client ("Mockba DX7", src/dx7_host.cpp's --client default) instead of
-    the leftover donor addon's own. See LEFTOVER-DATA FIX.
+    ports instead of the leftover donor addon's own. See LEFTOVER-DATA FIX.
 
-    UNCONFIRMED, same caveat as the rest of this file: `deviceId` (e.g.
-    "137-0") looks like a cached ALSA client:port number from whatever
-    device this seed was captured on -- reset to "0-0" here as a
-    clearly-unresolved placeholder on the assumption the Force re-resolves
-    routes by deviceName when the cached id doesn't match anything live --
-    not verified against real firmware behavior.
+    CORRECTED: the client name dx7_host.cpp passes to RtMidi ("Mockba DX7")
+    is NOT what actually shows up in ALSA/mido's port list on real
+    hardware -- confirmed live (mido.get_output_names()/get_input_names(),
+    same investigation that fixed web/server.py's identical bug --
+    force-acid's web/server.py has the full story in its own
+    IN_PORT_MATCH/OUT_PORT_MATCH comment): MockbaMod reorders it into
+    "DX7:In (Mockba)" / "DX7:Out (Mockba)" (an ephemeral numeric
+    client:port suffix follows, e.g. "... 138:0", not included here since
+    it's assigned fresh every boot). The previous version of this function
+    used "Mockba DX7" verbatim, which was never actually correct on this
+    device.
+
+    STILL UNCONFIRMED: whether Force's own route-matching needs the literal
+    "(Mockba)" suffix, does prefix matching, or something else. `deviceId`
+    (e.g. "137-0") looks like a cached, per-boot-ephemeral ALSA client:port
+    number -- reset to "0-0" here as a clearly-unresolved placeholder on
+    the assumption Force re-resolves routes by deviceName when the cached
+    id doesn't match anything live -- not verified against real firmware
+    behavior.
     """
-    ch0 = control_channel - 1  # dx7_host.cpp/--control-channel are 1-based; this file's own
-                                # outputChannel:12 paired with deviceName "...CH:13" confirms
-                                # the numeric field is 0-based, the display suffix 1-based.
-    client = "Mockba DX7"
+    ch0 = control_channel - 1  # dx7_host.cpp/--control-channel are 1-based; the numeric
+                                # outputChannel field itself is 0-based.
+    client = "DX7"
 
     in_route = doc["data"]["midiInputRoute"]
-    in_route["inputPort"]["deviceName"] = client
+    in_route["inputPort"]["deviceName"] = f"{client}:In (Mockba)"
     in_route["inputPort"]["deviceId"] = "0-0"
     in_route["inputChannel"] = ch0
 
     out_route = doc["data"]["midiOutputRoute"]
-    out_route["outputPort"]["deviceName"] = f"{client} - CH:{control_channel}"
+    out_route["outputPort"]["deviceName"] = f"{client}:Out (Mockba)"
     out_route["outputPort"]["deviceId"] = "0-0"
     out_route["outputChannel"] = ch0
 
