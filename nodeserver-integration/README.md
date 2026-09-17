@@ -8,7 +8,7 @@ the Modules page and the home-page quick-links.
 
 Automatic: nodeServer's `moduler` endpoint (`api/endpoints/moduler/index.js`)
 scans every `AddOns/*/NSMODULE.json` and lists whatever it finds. Once
-`addon/NSMODULE.json` is deployed inside `AddOns/ForceDX7/`, "Force DX7"
+`addon/NSMODULE.json` is deployed inside `AddOns/ForceDX7/`, "DX7"
 just appears there.
 
 ## Home page quick-link - two files to add
@@ -18,7 +18,7 @@ just appears there.
 
 ```js
     {
-        NAME: "Force DX7",
+        NAME: "DX7",
         PATH: "./api/endpoints/forcedx7.js",
         PARAM: "/forcedx7",
         URL: "/forcedx7",

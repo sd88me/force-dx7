@@ -8,7 +8,7 @@
 //
 // NOTE: the target IP is hardcoded below. If the Force's IP changes (no
 // DHCP reservation set), update it here -- see ENDPOINTS.js's entry for
-// "Force DX7".
+// "DX7".
 module.exports = { INIT };
 
 function INIT(req, res) {
