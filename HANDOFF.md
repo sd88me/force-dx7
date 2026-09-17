@@ -1,5 +1,29 @@
 # force-dx7 — v0.9 handoff
 
+## UPDATE 2026-09-17 (later same day): RATE_CORRECTION is NOT the problem — measured, not guessed
+
+Ran a real 20-minute unattended measurement on the live device (currently-
+deployed production binary, untouched, engine idle the whole time -- no
+notes/patch changes) with a liveness check every 30s and the existing 5s
+backlog log pulled in full afterward, specifically to stop guessing from
+15-90s spot checks (which is what produced the wrong "backlog is growing/
+shrinking, RATE_CORRECTION must be miscalibrated" impression earlier today
+-- see the section below). Linear-fit result on the post-transient data
+(first 90s excluded): **-0.2ppm residual drift** -- essentially zero, on
+top of the already-deployed ~1021ppm `RATE_CORRECTION`. That constant is
+correct as deployed; do not re-tune it from a short live sample again.
+
+What the same run DID surface, real and reproducible: backlog starts around
+**~4000 frames on a fresh engine start and takes a full 15-20 minutes to
+decay down** to a healthy ~100-200 frame steady state (measured: 4028 ->
+126 over the 20-minute window, monotonically decreasing, never stuck,
+never growing). This is a genuine startup-transient characteristic, not
+clock drift -- force-jv880 does NOT show this (see its own HANDOFF.md;
+same measurement session, its backlog started at ~150 and stayed there
+the whole time). Worth understanding *why* dx7 differs from jv880 here if
+anyone revisits the rebuild, but it's self-healing and not what "the grit
+bug" was ever about -- don't conflate the two.
+
 ## ⚠️ UPDATE 2026-09-17: the "just re-apply paced 128-block" plan below didn't work — read before trying again
 
 This project had **no git history at all** (unlike its sibling ports) despite
