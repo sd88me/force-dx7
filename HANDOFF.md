@@ -1,4 +1,4 @@
-# force-dx7 — v0.9 handoff
+# force-dx7 — v1.0
 
 ## ⚠️ UPDATE 2026-09-17 (resolved): fixed-128-block re-derived, confirmed clean by ear, rename+labels back in
 
@@ -180,36 +180,29 @@ sits now, you will REGRESS the grit fix. Before the next rebuild:
   in force-maze) — reduces but does not eliminate residual crackle; this is
   an accepted, known limitation shared with force-jv880 (see below).
 
-## Outstanding work for v1.0 (not yet done)
-- **Web UI sync bug**: knobs and the algorithm diagram don't refresh when
-  switching patches via the dropdown — only the currently-turned knob
-  updates. Need a "reseed everything from chain_params after a patch
-  change" call, similar to force-jv880's `syncPresetName()` pattern but for
-  *all* params, not just the name. (force-jv880 has the identical bug —
-  worth fixing both from one shared understanding of the root cause.)
-- **Knob labels**: currently abbreviated (`Op1 Crs`, `Op1 Fin`, `LFO PMD`
-  etc.) — user wants full names instead of acronyms.
-- **Envelope section needs explanatory copy**: R1-4/L1-4 (DX7's own
-  envelope model) is confusing to anyone expecting standard ADSR — add a
-  short explanation of what each stage actually does.
-- **nodeServer integration not yet applied**: `nodeserver-integration/`
-  has the redirect module + README instructions ready, but nobody has
-  actually copied `forcedx7.js` into a live nodeServer install or added
-  the `ENDPOINTS.js` entry yet. Also add a naming-convention update while
-  doing this (see below).
-- Backlog/latency (~100ms) on the currently-deployed binary — real, not
-  yet fixed, folded into the critical rebuild item above.
+## Done for v1.0 (all resolved 2026-09-17, see git log for detail)
+- **Web UI sync bug**: fixed — patch changes now reseed every knob (and
+  the algorithm diagram) via `syncPatchName()` calling `seedKnobs()` once
+  the swap is confirmed landed, not just the name/index.
+- **Knob labels**: full words throughout (`Coarse`, `Fine`, `Vel Sens`,
+  `LFO Pitch Mod`, etc.), no more acronyms.
+- **Envelope section explanatory copy**: added, clarifying R1-4/L1-4 are
+  rates-toward-a-target and target-levels, not ADSR stages.
+- **nodeServer integration**: applied — `forcedx7.js` copied in and the
+  `ENDPOINTS.js` entry added, live and working.
+- **MIDI port / display name rename**: done (`DX7:In (Mockba)`, "DX7" not
+  "Force DX7" on the home page).
+- **Output Mix section**: added (Voice Out / Channel / Voice Vol), first
+  row of controls, exposing the host-level mix.* API that already existed
+  but was never surfaced in the UI.
+- **The original "gritty and distorted" audio bug**: root-caused AND
+  fixed AND confirmed clean by ear this time (not just by backlog metric)
+  — see the fixed-128-block `timer_loop()` UPDATE section above.
+
+## Still open
+- Long-term backlog behavior under the current fixed-128-block build
+  hasn't had a proper multi-minute soak test (see UPDATE section above).
 - Real audible patch-quality review with actual loaded `.syx` banks beyond
   spot-checking — only lightly done so far.
-- `.xtk` template never confirmed rendering correctly on the physical
-  touchscreen (same open item as every port in this project).
-
-## New naming-convention requests (cross-project, see also force-jv880)
-- Rename this addon's virtual MIDI port from `Mockba DX7:In` to
-  `DX7 In (Mockba)` (pattern: synth name first, "(Mockba)" suffix, not
-  prefix) — change in `dx7_host.cpp`'s `client` default / RtMidi port name.
-- On nodeServer, wherever this addon's name is displayed (NSMODULE.json's
-  `NAME`, the home-page ENDPOINTS.js entry's `NAME`), drop the leading
-  "Force" — should read "DX7", not "Force DX7". Scope of this rename
-  request across the OTHER addons (acid/maze/maze-seq) wasn't explicitly
-  confirmed — check with the user before renaming those too.
+- `.xtk` template screen rendering — handled outside this project's own
+  session, not verified here.
