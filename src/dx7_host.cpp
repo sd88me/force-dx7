@@ -219,29 +219,44 @@ static std::atomic<uint64_t> g_total_wakes{0};
  * carried over into either newer host shim until now. */
 constexpr double RATE_CORRECTION = 44100.0 / (44100.0 - 45.0);   /* ~1.00102 */
 
+/* Fixed-128-frame-block rendering: dx7_plugin.cpp's grit bug needed
+ * render_block() calls quantized to a small constant size rather than the
+ * variable, elapsed-time-sized calls below. RE-IMPLEMENTED 2026-09-17 --
+ * the original fix (see HANDOFF.md) is gone; force-dx7 turned out to have
+ * no git history to recover it from (unlike its sibling ports, fixed by
+ * git-initing this repo alongside this change), so this is a fresh
+ * implementation of the same idea with the previously-identified pacing
+ * bug fixed:
+ *
+ * The earlier attempt drained however many 128-frame chunks were owed (up
+ * to 32 back-to-back, i.e. up to the old MAX_FRAMES ceiling's worth) in one
+ * unpaced tight loop within a single wake, no sleep between chunks -- that
+ * got the ring stuck at a ~4400-frame backlog immediately on every fresh
+ * start (forceAudioIn.so's hysteresis-trim never triggered to correct it)
+ * and sounded worse than the grit it fixed.
+ *
+ * This version keeps a fractional "frame debt" owed since the last chunk,
+ * accumulated from real elapsed time (RATE_CORRECTION applied here, same
+ * as the variable-length version below used to) but drains it in fixed
+ * 128-frame chunks, capped at MAX_CHUNKS_PER_WAKE per wake. Any leftover
+ * debt (a long stall, or just not at a full 128 yet) carries into the next
+ * wake instead of being forced out immediately, so a startup or
+ * scheduler-jitter backlog spreads across several ~1.5ms wake periods
+ * instead of one unpaced burst -- the natural sleep_for() gap between
+ * wakes IS the pacing; no explicit inter-chunk sleep needed. */
 static void timer_loop() {
-    constexpr int MAX_FRAMES = 4096;
-    int16_t  pcm[MAX_FRAMES * 2];
-    float    flt[MAX_FRAMES * 2];
+    constexpr int BLOCK_FRAMES = 128;
+    constexpr int MAX_CHUNKS_PER_WAKE = 8;          /* burst ceiling: 8*128 = 1024 frames (~23ms) per wake */
+    constexpr double MAX_DEBT_FRAMES = 4096.0;      /* same ceiling the old variable-length cap used */
+    int16_t  pcm[BLOCK_FRAMES * 2];
+    float    flt[BLOCK_FRAMES * 2];
     const auto period = std::chrono::microseconds(1500);
 
     using clock = std::chrono::steady_clock;
     auto prev = clock::now();
     auto last_stat = prev;
+    double frame_debt = 0.0;
 
-    /* REVERTED 2026-09-14: the fixed-128-frame-block version below (still
-     * visible in git history) traded the original grit bug for a worse one
-     * -- draining catch-up frames in an unpaced tight loop (up to 32
-     * back-to-back 128-frame chunks with zero pacing between them, versus
-     * this version's single bounded call) produced a much larger startup
-     * burst that got the ring stuck at a ~4400-frame backlog indefinitely
-     * (reproduced fresh on every restart; forceAudioIn.so's own hysteresis-
-     * trim apparently never triggers to correct it, unlike the smaller
-     * bursts this version produces), audible as breaking up -- worse than
-     * the grit it fixed. Back to variable-length calls (proven stable on
-     * force-jv880/force-maze) while a safer fix for the original grit is
-     * worked out -- possibly pacing fixed-block catch-up with real sleeps
-     * between chunks instead of draining them all at once. */
     while (g_run.load()) {
         std::this_thread::sleep_for(period);
         auto now = clock::now();
@@ -252,29 +267,31 @@ static void timer_loop() {
         double seen_max = g_max_wake_ms.load();
         if (ms > seen_max) g_max_wake_ms.store(ms);
         g_total_wakes++;
+        if (ms > 9.0) g_late_wakes++;
 
-        int frames = (int)std::lround(secs * MOVE_SAMPLE_RATE * RATE_CORRECTION);
-        if (frames < 1) frames = 1;
-        if (frames > 400) g_late_wakes++;
-        if (frames > MAX_FRAMES) frames = MAX_FRAMES;
+        frame_debt += secs * MOVE_SAMPLE_RATE * RATE_CORRECTION;
+        if (frame_debt > MAX_DEBT_FRAMES) frame_debt = MAX_DEBT_FRAMES;   /* long-stall ceiling, not a per-wake one */
 
-        if (g_test_tone) {
-            static double phase = 0.0;
-            const double freq = 440.0, twoPi = 6.283185307179586;
-            for (int i = 0; i < frames; i++) {
-                float s = 0.2f * (float)std::sin(phase);
-                flt[i*2] = s; flt[i*2+1] = s;
-                phase += twoPi * freq / MOVE_SAMPLE_RATE;
-                if (phase > twoPi) phase -= twoPi;
+        for (int chunk = 0; chunk < MAX_CHUNKS_PER_WAKE && frame_debt >= BLOCK_FRAMES; chunk++) {
+            if (g_test_tone) {
+                static double phase = 0.0;
+                const double freq = 440.0, twoPi = 6.283185307179586;
+                for (int i = 0; i < BLOCK_FRAMES; i++) {
+                    float s = 0.2f * (float)std::sin(phase);
+                    flt[i*2] = s; flt[i*2+1] = s;
+                    phase += twoPi * freq / MOVE_SAMPLE_RATE;
+                    if (phase > twoPi) phase -= twoPi;
+                }
+            } else {
+                {
+                    std::lock_guard<std::mutex> lk(g_lock);
+                    g_api->render_block(g_inst, pcm, BLOCK_FRAMES);
+                }
+                for (int i = 0; i < BLOCK_FRAMES * 2; i++) flt[i] = pcm[i] / 32768.0f;
             }
-        } else {
-            {
-                std::lock_guard<std::mutex> lk(g_lock);
-                g_api->render_block(g_inst, pcm, frames);
-            }
-            for (int i = 0; i < frames * 2; i++) flt[i] = pcm[i] / 32768.0f;
+            ring_push(flt, BLOCK_FRAMES);
+            frame_debt -= BLOCK_FRAMES;
         }
-        ring_push(flt, (uint32_t)frames);
 
         if (now - last_stat >= std::chrono::seconds(5)) {
             last_stat = now;
@@ -282,10 +299,10 @@ static void timer_loop() {
                                                    & (AI_RING_FRAMES - 1))
                                       : 0;
             fprintf(stderr, "[dx7] render thread: max wake gap %.1fms, %llu/%llu wakes > 9ms, ring drops %llu, "
-                            "backlog %u frames\n",
+                            "backlog %u frames, frame debt %.0f\n",
                     g_max_wake_ms.load(),
                     (unsigned long long)g_late_wakes.load(), (unsigned long long)g_total_wakes.load(),
-                    (unsigned long long)g_ring_drops.load(), backlog);
+                    (unsigned long long)g_ring_drops.load(), backlog, frame_debt);
         }
     }
 }
