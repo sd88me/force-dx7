@@ -101,13 +101,15 @@
         <div id="algoDiagram" title="Algorithm routing (see docs/ALGORITHMS.md for data provenance/confidence)"></div>
       </div>
     </div>
-    <div class="subsec">
-      <h3>LFO</h3>
-      <div class="knobs" id="lfoKnobs"></div>
-    </div>
-    <div class="subsec">
-      <h3>Pitch EG</h3>
-      <div class="knobs" id="pitchEgKnobs"></div>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+      <div class="subsec" style="flex:1 1 260px;">
+        <h3>LFO</h3>
+        <div class="grid4" id="lfoKnobs"></div>
+      </div>
+      <div class="subsec" style="flex:1 1 260px;">
+        <h3>Pitch EG</h3>
+        <div id="pitchEgKnobs"></div>
+      </div>
     </div>
   </div>
 
@@ -252,8 +254,6 @@ function makeSelect(key, label, options, host){
 var knobRefs = {};
 var GLOBAL_KEYS = ["output_level","octave_transpose","algorithm","feedback","osc_sync","transpose"];
 var LFO_KEYS = ["lfo_speed","lfo_delay","lfo_pmd","lfo_amd","lfo_pms","lfo_wave","lfo_sync"];
-var PITCH_EG_KEYS = ["pitch_eg_r1","pitch_eg_r2","pitch_eg_r3","pitch_eg_r4",
-                     "pitch_eg_l1","pitch_eg_l2","pitch_eg_l3","pitch_eg_l4"];
 
 /* Full per-operator parameter set — every one of these exists per operator
  * (op1_* .. op6_*) in chain_params (148 entries total; confirmed live via
@@ -320,8 +320,27 @@ function buildFromChainParams(list){
     knobRefs[k]=makeKnob(k, p.name||k, p.min, p.max, gHost, opts); });
   LFO_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
     knobRefs[k]=makeKnob(k, p.name||k, p.min, p.max, lHost); });
-  PITCH_EG_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
-    knobRefs[k]=makeKnob(k, (p.name||k).replace("PEG ",""), p.min, p.max, peHost); });
+  // Same 4-on-4 rate/level rows + drawn curve as each operator's own
+  // envelope (see buildFromChainParams' per-operator loop below) -- the
+  // pitch EG is the exact same DX7 rate/level envelope model, just applied
+  // to pitch instead of amplitude, so it gets the same layout/visualization
+  // rather than a plain flat knob row.
+  var peEnvSvgHost=document.createElement("div"); peEnvSvgHost.className="envviz"; peHost.appendChild(peEnvSvgHost);
+  var peRateRow=document.createElement("div"); peRateRow.className="grid4"; peHost.appendChild(peRateRow);
+  var peLevelRow=document.createElement("div"); peLevelRow.className="grid4"; peHost.appendChild(peLevelRow);
+  var peEgState = {r:[0,0,0,0], l:[0,0,0,0]};
+  function redrawPeEnv(){ drawEnvelope(peEnvSvgHost, peEgState.r, peEgState.l); }
+  [1,2,3,4].forEach(function(n){
+    var k="pitch_eg_r"+n, p=byKey[k]; if(!p) return;
+    knobRefs[k]=makeKnob(k, "R"+n, p.min, p.max, peRateRow, {size:34,
+      onChange:function(v){ peEgState.r[n-1]=v; redrawPeEnv(); }});
+  });
+  [1,2,3,4].forEach(function(n){
+    var k="pitch_eg_l"+n, p=byKey[k]; if(!p) return;
+    knobRefs[k]=makeKnob(k, "L"+n, p.min, p.max, peLevelRow, {size:34,
+      onChange:function(v){ peEgState.l[n-1]=v; redrawPeEnv(); }});
+  });
+  redrawPeEnv();
 
   var gridHost=document.getElementById("opGrid");
   for (var opN=1; opN<=6; opN++){
