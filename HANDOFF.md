@@ -1,41 +1,36 @@
 # force-dx7 — v0.9 handoff
 
-## ⚠️ UPDATE 2026-09-17 (still later): the naming-rename binary was audibly glitchy — reverted, source/binary mismatch is back
+## ⚠️ UPDATE 2026-09-17 (resolved): fixed-128-block re-derived, confirmed clean by ear, rename+labels back in
 
-While doing an unrelated naming-convention rename (MIDI port/NSMODULE.json,
-see git log), the live `dx7_host` binary got rebuilt from and replaced with
-the tracked source's variable-length timer_loop + `RATE_CORRECTION` combo
-(the one the 20-minute measurement below was run against). **That combo had
-never actually been listened to before being deployed** -- it was assumed
-"safe" because it doesn't have the separately-known-buggy fixed-128-block
-WIP rewrite, but "doesn't have bug X" isn't the same as "confirmed clean
-audio". User reported it sounded glitchy/not clean; confirmed by ear.
+Follow-up to the "glitchy, reverted" episode this same day (short version:
+a variable-length+`RATE_CORRECTION` binary got deployed for an unrelated
+naming rename, had never actually been listened to, and turned out to
+sound glitchy -- reverted at the time). Root cause was never the rename
+itself; it was deploying an unvalidated timer_loop shape.
 
-Reverted: `/media/662522/AddOns/ForceDX7/dx7_host` on the live device is now
-back to `dx7_host.bak-pretest` -- the actual original, pre-session,
-fixed-128-block binary that was confirmed clean before any of today's work
-started. **This means the naming rename is currently NOT reflected in the
-live dx7 binary** (MIDI port is back to `Mockba DX7:In`, not
-`DX7:In (Mockba)`) even though the tracked git source has it -- source and
-deployed binary are mismatched again, same class of problem this file has
-flagged before. Don't "fix" this by just rebuilding and redeploying tracked
-source -- that's exactly what caused the glitch. The rename needs to wait
-until the fixed-128-block audio path is properly re-derived AND confirmed
-clean by ear before it's safe to rebuild+redeploy with the rename included.
+Fix: rebuilt `timer_loop()` with the fixed-128-frame-block approach (see
+the detailed comment above it in `dx7_host.cpp` for the exact design --
+fractional frame-debt carried across wakes, capped chunks per wake, no
+unpaced burst), **with `RATE_CORRECTION` disabled** -- the measurement
+below found that constant genuinely doesn't mix with this chunking shape
+(unbounded backlog growth, ~1160ppm, not measurement noise). Deployed live
+and **the user listened and confirmed it sounds clean** -- no grit, no
+glitching. This is the first time this session's fixed-128 rewrite was
+actually validated by ear rather than by backlog metric alone.
 
-The measurement session below was run against the (glitchy) variable-length
-binary, before this was discovered. Its backlog/drift numbers are still
-real and worth keeping, but don't assume they describe what's live now --
-they describe a binary that's since been reverted.
+MIDI port rename and full-word knob labels are back on the live binary as
+a result (both live in the same source files as the timer_loop, so they
+ride along automatically once the timer_loop itself is trustworthy).
+Source and deployed binary are back in sync.
 
-Also reverted as a side effect (same binary, same `dx7_plugin.cpp`): the
-full-word knob label fix ("Crs"->"Coarse" etc.) from the cosmetic-cleanup
-work below -- live `/describe` is back to showing "Op1 Crs", "LFO PMD",
-etc. This is expected, not a second bug; it needs the same fixed-128-block
-re-derivation as the rename before it can go back in. The web-UI-only
-fixes (patch-switch reseed, the `.name`-vs-raw-key display bug, Pitch EG/
-LFO layout) are untouched by this and still live, since those are pure
-`dx7_ui.html` changes with no binary involved.
+**Still open**: long-term backlog behavior under this exact build hasn't
+had a proper multi-minute soak test (only briefly observed live before the
+ear-confirmation). The measurement session below was run against the
+now-superseded variable-length binary -- its RATE_CORRECTION-is-correct
+finding still stands for that shape, but its backlog/drift numbers don't
+describe what's live now. Worth a fresh long soak against this exact
+build before considering the backlog question fully closed, though the
+audio-quality question (the actual original bug) is resolved.
 
 ## UPDATE 2026-09-17 (later same day): RATE_CORRECTION is NOT the problem — measured, not guessed
 
