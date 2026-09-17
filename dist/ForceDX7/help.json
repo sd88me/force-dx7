@@ -1,0 +1,240 @@
+{
+  "title": "Dexed (DX7)",
+  "children": [
+    {
+      "title": "Overview",
+      "lines": [
+        "6-operator FM synth",
+        "based on the Yamaha",
+        "DX7 / Dexed engine.",
+        "",
+        "16-voice polyphony.",
+        "32 FM algorithms.",
+        "",
+        "Loads standard DX7",
+        ".syx patch banks",
+        "(32 patches each).",
+        "",
+        "Supports velocity,",
+        "pitch bend, mod",
+        "wheel, aftertouch,",
+        "and sustain pedal."
+      ]
+    },
+    {
+      "title": "Setup",
+      "children": [
+        {
+          "title": "Loading Patches",
+          "lines": [
+            "33 .syx banks ship",
+            "with the module,",
+            "32 patches each.",
+            "You do not have to",
+            "supply any.",
+            "",
+            "To add more, upload",
+            ".syx files with",
+            "Schwung Manager at",
+            "move.local:7700.",
+            "",
+            "They go in the",
+            "module's banks/",
+            "folder. Pick one",
+            "with Choose Bank.",
+            "",
+            "Standard VMEM",
+            "format only (not",
+            "TX81Z or others)."
+          ]
+        },
+        {
+          "title": "Finding Patches",
+          "lines": [
+            "Search online for",
+            "\"DX7 syx patches\"",
+            "",
+            "Classic banks:",
+            " ROM 1A / 1B",
+            " (Yamaha factory)",
+            "",
+            " E! Series",
+            " (famous aftermarket)",
+            "",
+            " Dexed Library",
+            " (community patches)",
+            "",
+            "Thousands of free",
+            ".syx banks available."
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Controls",
+      "children": [
+        {
+          "title": "Knob Mapping",
+          "lines": [
+            "Knob 1: Output Level",
+            " Master volume 0-100",
+            "",
+            "Knob 2: Octave",
+            " Transpose -3 to +3",
+            "",
+            "Knob 3: Feedback",
+            " Op 6 self-feedback",
+            " (0-7)",
+            "",
+            "Knob 4: LFO Speed",
+            "Knob 5: LFO PitchMod",
+            "Knob 6: LFO Amp Mod",
+            "",
+            "Patches are browsed",
+            "from the preset list",
+            "on the same page.",
+            "Algorithm lives on",
+            "the Global page."
+          ]
+        },
+        {
+          "title": "Global Parameters",
+          "lines": [
+            "Algorithm: 1-32",
+            " FM operator routing",
+            " (set by patch)",
+            "",
+            "Feedback: 0-7",
+            " Operator 6 self-",
+            " modulation amount",
+            "",
+            "Osc Sync: on/off",
+            "",
+            "Transpose: 0-48",
+            " 24 = no transpose"
+          ]
+        },
+        {
+          "title": "LFO",
+          "lines": [
+            "Speed: 0-99",
+            " LFO rate",
+            "",
+            "Delay: 0-99",
+            " Time before LFO",
+            " onset after note",
+            "",
+            "Pitch Mod: 0-99",
+            " Pitch modulation",
+            " depth",
+            "",
+            "Amp Mod: 0-99",
+            " Amplitude mod depth",
+            "",
+            "Pitch Sens: 0-7",
+            " How far Pitch Mod",
+            " and the mod wheel",
+            " can bend pitch",
+            "",
+            "Waveform: 0-5",
+            " 0 Triangle",
+            " 1 Saw Down",
+            " 2 Saw Up",
+            " 3 Square",
+            " 4 Sine",
+            " 5 S&H",
+            "",
+            "Key Sync: restart",
+            " LFO on each note"
+          ]
+        },
+        {
+          "title": "Operators (1-6)",
+          "lines": [
+            "Each operator has:",
+            "",
+            "Level: 0-99",
+            " Output amplitude",
+            "",
+            "Coarse: 0-31",
+            " Frequency ratio",
+            "",
+            "Fine: 0-99",
+            " Fine frequency",
+            "",
+            "Detune: -7 to +7",
+            "",
+            "Osc Mode:",
+            " Ratio or Fixed freq",
+            "",
+            "Envelope: 4-stage",
+            " R1-R4: rates",
+            " L1-L4: levels",
+            "",
+            "Vel Sens: 0-7",
+            "Amp Mod: 0-3",
+            "Rate Scale: 0-7",
+            "Key Scaling: per-key",
+            " level adjustment"
+          ]
+        }
+      ]
+    },
+    {
+      "title": "MIDI",
+      "lines": [
+        "16-voice polyphony",
+        "with voice stealing",
+        "(oldest note drops).",
+        "",
+        "Pitch Bend:",
+        " +/- 2 semitones",
+        "",
+        "Mod Wheel (CC 1):",
+        " Pitch and amplitude",
+        " modulation per LFO",
+        " settings",
+        "",
+        "Aftertouch:",
+        " Pitch and amplitude",
+        " modulation",
+        "",
+        "Sustain (CC 64):",
+        " Hold notes while",
+        " pedal is pressed",
+        "",
+        "Velocity controls",
+        "operator levels per",
+        "each op's vel sens."
+      ]
+    },
+    {
+      "title": "FM Algorithms",
+      "lines": [
+        "32 algorithms define",
+        "how the 6 operators",
+        "connect:",
+        "",
+        "Carriers produce",
+        "audible sound.",
+        "",
+        "Modulators shape the",
+        "timbre of carriers.",
+        "",
+        "Algo 1: 2 carriers,",
+        " 4 modulators",
+        " (Op1 and Op3 sound)",
+        "Algo 5: 3 carriers,",
+        " three 2-op stacks",
+        " (Op1, Op3, Op5)",
+        "Algo 32: all 6 ops",
+        " as carriers (organ)",
+        "",
+        "Each patch stores",
+        "its algorithm. Edit",
+        "via the menu to",
+        "experiment."
+      ]
+    }
+  ]
+}

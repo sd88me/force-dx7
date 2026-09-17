@@ -1,0 +1,228 @@
+{
+  "id": "dexed",
+  "name": "Dexed",
+  "abbrev": "DX",
+  "version": "0.5.13",
+  "description": "6-operator FM synthesizer (Dexed/MSFA) with .syx patch support",
+  "author": "Dexed/MSFA by google/asb2m10 (port: charlesvestal)",
+  "license": "GPL-3.0",
+  "ui": "ui.js",
+  "dsp": "dsp.so",
+  "api_version": 2,
+  "capabilities": {
+    "audio_out": true,
+    "audio_in": false,
+    "midi_in": true,
+    "midi_out": false,
+    "aftertouch": true,
+    "chainable": true,
+    "component_type": "sound_generator",
+    "ui_hierarchy": {
+      "levels": {
+        "root": {
+          "name": "Dexed",
+          "params": [
+            {
+              "key": "preset",
+              "label": "Preset",
+              "type": "int",
+              "min": 0,
+              "max": 31,
+              "default": 0
+            },
+            {
+              "key": "output_level",
+              "short_name": "Output",
+              "label": "Output",
+              "type": "int",
+              "min": 0,
+              "max": 100,
+              "default": 50
+            },
+            {
+              "key": "octave_transpose",
+              "label": "Octave",
+              "type": "int",
+              "min": -3,
+              "max": 3,
+              "default": 0
+            },
+            {
+              "key": "algorithm",
+              "short_name": "ALGO",
+              "label": "Algorithm",
+              "type": "int",
+              "min": 1,
+              "max": 32,
+              "default": 1
+            },
+            {
+              "key": "feedback",
+              "label": "Feedback",
+              "type": "int",
+              "min": 0,
+              "max": 7,
+              "default": 0
+            },
+            {
+              "key": "osc_sync",
+              "short_name": "Sync",
+              "label": "Osc Sync",
+              "type": "int",
+              "min": 0,
+              "max": 1,
+              "default": 0
+            },
+            {
+              "key": "transpose",
+              "label": "Transpose",
+              "type": "int",
+              "min": 0,
+              "max": 48,
+              "default": 24
+            },
+            {
+              "key": "lfo_speed",
+              "short_name": "Spd",
+              "label": "LFO Spd",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 35
+            },
+            {
+              "key": "lfo_delay",
+              "short_name": "Dly",
+              "label": "LFO Dly",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "lfo_pmd",
+              "short_name": "PMD",
+              "label": "LFO PMD",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "lfo_amd",
+              "short_name": "AMD",
+              "label": "LFO AMD",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "lfo_pms",
+              "short_name": "PMS",
+              "label": "LFO PMS",
+              "type": "int",
+              "min": 0,
+              "max": 7,
+              "default": 0
+            },
+            {
+              "key": "lfo_wave",
+              "short_name": "Wave",
+              "label": "LFO Wave",
+              "type": "int",
+              "min": 0,
+              "max": 5,
+              "default": 0
+            },
+            {
+              "key": "lfo_sync",
+              "short_name": "Sync",
+              "label": "LFO Sync",
+              "type": "int",
+              "min": 0,
+              "max": 1,
+              "default": 0
+            },
+            {
+              "key": "op1_level",
+              "short_name": "Op1",
+              "label": "Op1 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "op2_level",
+              "short_name": "Op2",
+              "label": "Op2 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "op3_level",
+              "short_name": "Op3",
+              "label": "Op3 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "op4_level",
+              "short_name": "Op4",
+              "label": "Op4 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "op5_level",
+              "short_name": "Op5",
+              "label": "Op5 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            },
+            {
+              "key": "op6_level",
+              "short_name": "Op6",
+              "label": "Op6 Lvl",
+              "type": "int",
+              "min": 0,
+              "max": 99,
+              "default": 0
+            }
+          ],
+          "knobs": [
+            "preset",
+            "output_level",
+            "octave_transpose",
+            "algorithm",
+            "feedback"
+          ]
+        }
+      }
+    }
+  },
+  "assets": {
+    "path": "banks",
+    "label": "Banks",
+    "extensions": [
+      ".syx"
+    ],
+    "optional": true,
+    "description": "Optionally upload additional .syx DX7 patch banks. 32 built-in factory patches are included.",
+    "hint": "Find DX7 .syx patch banks at",
+    "hint_url": "https://yamahablackboxes.com/collection/yamaha-dx7-synthesizer/patches/",
+    "hint_url_label": "Yamaha Black Boxes"
+  },
+  "defaults": {
+    "preset": 0
+  }
+}

@@ -1,0 +1,484 @@
+<title>Force DX7</title>
+<!--
+  This page's UI structure and styling take design inspiration from Dexed
+  (https://github.com/asb2m10/dexed), Pascal Gauthier (asb2m10) et al.,
+  GPL-3.0 -- credited per the project's own wishes (this is a hobby, open-
+  source port). No code or assets were copied from Dexed's own JUCE C++
+  source (a different, non-web UI toolkit entirely); this is an original
+  HTML/CSS/JS implementation of the same general dark-panel/LCD-accent
+  synth-editor style, built against dx7_host's own control socket API.
+-->
+<style>
+  /* Dark charcoal panel + cyan/teal LCD-style accent -- a style direction
+   * common across software synth editors generally (Dexed included), not
+   * a pixel-for-pixel reproduction of any single product's exact palette
+   * or artwork. No trademarked names or logos used anywhere in this file. */
+  :root{ --bg:#1a1c1e; --panel:#26292c; --panel2:#2f3336; --line:#454a4e;
+         --text:#d8dee2; --dim:#7c868c; --accent:#4ad6d6; --accent2:#d8dee2; --err:#e05c5c; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 -apple-system,Segoe UI,sans-serif;}
+  header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;
+    padding:8px 14px;background:#141618;border-bottom:2px solid var(--line);}
+  header .dot{width:9px;height:9px;border-radius:50%;background:#665544;flex:none;}
+  header .brand{font-weight:700;color:var(--accent);letter-spacing:.5px;
+    font-family:"Courier New",monospace;text-shadow:0 0 6px rgba(74,214,214,.35);}
+  header .brand small{color:var(--dim);font-weight:400;font-family:inherit;}
+  header .sp{flex:1}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:3px;
+    padding:5px 12px;cursor:pointer;font:inherit;}
+  button:hover{border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:default}
+  select{background:var(--panel2);color:inherit;border:1px solid var(--line);border-radius:3px;
+    padding:5px 8px;font:inherit;}
+  .row{display:flex;align-items:center;gap:8px;padding:10px 14px;flex-wrap:wrap;}
+  .row .name{min-width:160px;text-align:center;background:#0e1011;color:var(--accent);
+    border:1px solid var(--line);border-radius:3px;padding:5px 10px;font-weight:600;
+    font-family:"Courier New",monospace;letter-spacing:1px;text-shadow:0 0 5px rgba(74,214,214,.4);}
+  .row .idx{color:var(--dim);font-variant-numeric:tabular-nums;min-width:56px;text-align:center}
+  .nav{width:30px}
+  main{max-width:900px;margin:0 auto;padding:6px 14px 40px;}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;margin-top:12px;padding:12px 14px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);}
+  .panel h2{margin:0 0 10px;font-size:11px;text-transform:uppercase;letter-spacing:.9px;color:var(--accent);
+    font-family:"Courier New",monospace;}
+  .knobs{display:flex;flex-wrap:wrap;gap:18px;}
+  .knob{display:flex;flex-direction:column;align-items:center;gap:4px;width:64px;user-select:none;}
+  .knob svg{cursor:ns-resize;touch-action:none;}
+  .knob .lbl{font-size:10px;color:var(--dim);text-align:center;}
+  .knob .val{font-size:11px;font-variant-numeric:tabular-nums;}
+  /* 6 operators shown at once, 2 wide x 3 tall, not tabbed. */
+  .op-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media (max-width:560px){ .op-grid{grid-template-columns:1fr;} }
+  .op-panel{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:10px;}
+  .op-panel .ophead{font-family:"Courier New",monospace;color:var(--accent);font-weight:700;
+    letter-spacing:1px;margin-bottom:6px;font-size:12px;}
+  /* Oscillator/envelope sub-grids: 4 knobs per row ("4 on 4"). */
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 4px;justify-items:center;}
+  .envviz{width:100%;height:60px;margin:6px 0;}
+  .subsec{margin-top:4px;}
+  .subsec h3{margin:0 0 8px;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim);
+    border-top:1px solid var(--line);padding-top:10px;}
+  .subsec:first-child h3{border-top:none;padding-top:0;}
+  input[type=range]{writing-mode:vertical-lr;direction:rtl;width:20px;height:90px;accent-color:var(--accent);}
+  .note{color:var(--dim);font-size:11px;padding:0 14px 10px;}
+  @media (max-width:480px){ .ops{grid-template-columns:repeat(3,1fr);} }
+</style>
+
+<header>
+  <span class="dot" id="engDot"></span>
+  <span class="brand">DEXED <small>· DX7 FM editor</small></span>
+  <span class="sp"></span>
+  <button id="btnStart">Start</button>
+  <button id="btnStop">Stop</button>
+</header>
+
+<main>
+  <!-- Cartridge / bank picker -->
+  <div class="row">
+    <button class="nav" id="bankPrev" title="Previous bank">◀</button>
+    <select id="bankSelect" title="Cartridge / bank"></select>
+    <button class="nav" id="bankNext" title="Next bank">▶</button>
+    <span class="idx" id="bankIdx"></span>
+  </div>
+  <div class="note">Drop <code>.syx</code> bank files (32 voices each) into this addon's
+    <code>banks/</code> folder — rescanned automatically each time you open this dropdown.</div>
+
+  <!-- Patch picker -->
+  <div class="row">
+    <button class="nav" id="patchPrev" title="Previous patch">◀</button>
+    <div class="name" id="patchName">—</div>
+    <button class="nav" id="patchNext" title="Next patch">▶</button>
+    <select id="patchSelect" title="Jump to patch"></select>
+    <span class="idx" id="patchIdx"></span>
+    <button id="btnSync">⟳ Sync</button>
+  </div>
+
+  <div class="panel">
+    <div class="subsec" style="margin-top:0">
+      <h3 style="border-top:none;padding-top:0">Global</h3>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
+        <div class="knobs" id="globalKnobs"></div>
+        <div id="algoDiagram" title="Algorithm routing (see docs/ALGORITHMS.md for data provenance/confidence)"></div>
+      </div>
+    </div>
+    <div class="subsec">
+      <h3>LFO</h3>
+      <div class="knobs" id="lfoKnobs"></div>
+    </div>
+    <div class="subsec">
+      <h3>Pitch EG</h3>
+      <div class="knobs" id="pitchEgKnobs"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Operators</h2>
+    <div class="op-grid" id="opGrid"></div>
+  </div>
+
+  <div class="note" style="text-align:center;padding-top:20px;">
+    Force DX7 — a MockbaMod port. UI design inspired by
+    <a href="https://github.com/asb2m10/dexed" style="color:var(--accent)">Dexed</a>
+    (Pascal Gauthier / asb2m10, GPL-3.0). FM engine: Google's MSFA (Apache 2.0).
+  </div>
+</main>
+
+<script src="algorithms.js"></script>
+<script>
+"use strict";
+
+/* ---------------------------------------------------------------------
+ * Transport — plain fetch() to this page's own bridge server (server.py),
+ * which in turn talks to dx7_host's Unix control socket. No schwungRemote/
+ * postMessage indirection needed here (unlike force-jv880's web_ui.html):
+ * this page is original, written for the Force, not reused from Move.
+ * ------------------------------------------------------------------- */
+function getParam(key){
+  return fetch("/param?key="+encodeURIComponent(key))
+    .then(function(r){ return r.ok ? r.text() : null; })
+    .catch(function(){ return null; });
+}
+function setParam(key, val){
+  return fetch("/param", { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({key:key, value:String(val)}) }).catch(function(){});
+}
+function noteOn(note, vel){
+  return fetch("/note", { method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({note:note, velocity:vel}) }).catch(function(){});
+}
+
+/* ---------------------------------------------------------------------
+ * Engine start/stop bar — same pattern as force-jv880's own addition.
+ * ------------------------------------------------------------------- */
+var engDot=document.getElementById("engDot"), btnStart=document.getElementById("btnStart"),
+    btnStop=document.getElementById("btnStop"), engBusy=false;
+function paintEngine(running){
+  engDot.style.background = running ? "#3c3" : "#c33";
+  btnStart.disabled = engBusy || running;
+  btnStop.disabled = engBusy || !running;
+}
+function pollEngine(){
+  fetch("/status").then(function(r){return r.json();})
+    .then(function(j){ if(!engBusy) paintEngine(!!j.engine_running); })
+    .catch(function(){});
+}
+function engineAction(a){
+  engBusy=true; btnStart.disabled=true; btnStop.disabled=true;
+  fetch("/engine",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:a})})
+    .then(function(r){return r.json();})
+    .then(function(j){
+      if (a==="start" && j.ok){ setTimeout(function(){ location.reload(); }, 300); return; }
+      engBusy=false; paintEngine(false); pollEngine();
+    })
+    .catch(function(){ engBusy=false; pollEngine(); });
+}
+btnStart.onclick=function(){ engineAction("start"); };
+btnStop.onclick=function(){ engineAction("stop"); };
+pollEngine(); setInterval(pollEngine, 3000);
+
+/* ---------------------------------------------------------------------
+ * Rotary knob widget — vertical drag or wheel to change, same interaction
+ * model as force-jv880's web_ui.html (a common, well-understood pattern
+ * for this kind of control, not something specific to any one editor).
+ * ------------------------------------------------------------------- */
+function makeKnob(key, label, lo, hi, host, opts){
+  opts = opts || {};
+  var S = opts.size || 44;           // overall svg box (px)
+  var R = S*0.41;                    // ring radius, scales with S
+  var C = S/2;                       // centre
+  var onChange = opts.onChange;      // optional extra callback, e.g. redraw envelope/algorithm diagram
+  var wrap=document.createElement("div"); wrap.className="knob";
+  if (opts.size) wrap.style.width = (S+20)+"px";
+  var svg=document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("width",S); svg.setAttribute("height",S); svg.setAttribute("viewBox","0 0 "+S+" "+S);
+  var track=document.createElementNS(svg.namespaceURI,"circle");
+  track.setAttribute("cx",C); track.setAttribute("cy",C); track.setAttribute("r",R);
+  track.setAttribute("fill","none"); track.setAttribute("stroke","#5a4a3c"); track.setAttribute("stroke-width", Math.max(2,S*0.09));
+  var arc=document.createElementNS(svg.namespaceURI,"path");
+  arc.setAttribute("fill","none"); arc.setAttribute("stroke","#4ad6d6"); arc.setAttribute("stroke-width", Math.max(2,S*0.09));
+  arc.setAttribute("stroke-linecap","round");
+  svg.appendChild(track); svg.appendChild(arc);
+  var lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=label;
+  var val=document.createElement("div"); val.className="val"; val.textContent="";
+  wrap.appendChild(svg); wrap.appendChild(lbl); wrap.appendChild(val);
+  host.appendChild(wrap);
+
+  function paint(v){
+    var frac=(v-lo)/(hi-lo); frac=Math.max(0,Math.min(1,frac));
+    var a0=-220, a1=40, a=a0+(a1-a0)*frac; // degrees, matches a ~260deg sweep
+    var rad0=a0*Math.PI/180, rad1=a*Math.PI/180;
+    var x0=C+R*Math.cos(rad0), y0=C+R*Math.sin(rad0);
+    var x1=C+R*Math.cos(rad1), y1=C+R*Math.sin(rad1);
+    var large = Math.abs(a-a0) > 180 ? 1 : 0;
+    arc.setAttribute("d","M "+x0+" "+y0+" A "+R+" "+R+" 0 "+large+" 1 "+x1+" "+y1);
+    val.textContent = Math.round(v);
+  }
+  var cur = lo;
+  paint(cur);
+
+  var dragging=false, startY=0, startV=0;
+  function move(v){
+    cur=Math.max(lo,Math.min(hi,v)); paint(cur); setParam(key, Math.round(cur));
+    if (onChange) onChange(cur);
+  }
+  svg.addEventListener("pointerdown", function(e){ dragging=true; startY=e.clientY; startV=cur; svg.setPointerCapture(e.pointerId); });
+  svg.addEventListener("pointermove", function(e){ if(!dragging) return; move(startV+(startY-e.clientY)*(hi-lo)/120); });
+  svg.addEventListener("pointerup", function(){ dragging=false; });
+  svg.addEventListener("wheel", function(e){ e.preventDefault(); move(cur+(e.deltaY<0?1:-1)); }, {passive:false});
+
+  return { set:function(v){ cur=v; paint(v); if(onChange) onChange(v); } };
+}
+
+/* Plain <select> for small enum-ranged params (oscillator mode, keyboard-
+ * scaling curve shape) where a knob would just be an awkward 2-4-position
+ * control -- a dropdown is clearer for these regardless of what widget a
+ * given editor happens to use for them. */
+function makeSelect(key, label, options, host){
+  var wrap=document.createElement("div"); wrap.className="knob"; wrap.style.width="76px";
+  var sel=document.createElement("select"); sel.style.width="100%"; sel.style.fontSize="10px";
+  options.forEach(function(opt,i){ var o=document.createElement("option"); o.value=i; o.textContent=opt; sel.appendChild(o); });
+  var lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=label;
+  sel.onchange=function(){ setParam(key, sel.value); };
+  wrap.appendChild(sel); wrap.appendChild(lbl);
+  host.appendChild(wrap);
+  return { set:function(v){ sel.value=Math.round(v); } };
+}
+
+/* ---------------------------------------------------------------------
+ * Param layout — chain_params fetched fresh at boot (module.json's
+ * ui_hierarchy, same source as the .xtk template / dx7_host's PARAMS[]
+ * table — see scripts/build_xtk.py, never hand-duplicated).
+ * ------------------------------------------------------------------- */
+var knobRefs = {};
+var GLOBAL_KEYS = ["output_level","octave_transpose","algorithm","feedback","osc_sync","transpose"];
+var LFO_KEYS = ["lfo_speed","lfo_delay","lfo_pmd","lfo_amd","lfo_pms","lfo_wave","lfo_sync"];
+var PITCH_EG_KEYS = ["pitch_eg_r1","pitch_eg_r2","pitch_eg_r3","pitch_eg_r4",
+                     "pitch_eg_l1","pitch_eg_l2","pitch_eg_l3","pitch_eg_l4"];
+
+/* Full per-operator parameter set — every one of these exists per operator
+ * (op1_* .. op6_*) in chain_params (148 entries total; confirmed live via
+ * /describe against the deployed engine, not assumed from module.json's
+ * own curated root-level list, which only shows *_level). Grouped the same
+ * way the real DX7's own parameter structure groups them (oscillator /
+ * envelope / keyboard scaling) — that's the instrument's own data model,
+ * not any one editor's particular creative layout choice. osc_mode and the
+ * two keyboard-scaling curve params are small enums, rendered as <select>
+ * (see makeSelect above) rather than knobs. */
+var OP_OSC_KNOBS = ["level","coarse","fine","detune","vel_sens","amp_mod","rate_scale"];
+var OP_EG_KNOBS = ["eg_r1","eg_r2","eg_r3","eg_r4","eg_l1","eg_l2","eg_l3","eg_l4"];
+var OP_SCALE_KNOBS = ["key_bp","key_ld","key_rd"];
+var CURVE_OPTIONS = ["-LIN","-EXP","+EXP","+LIN"];  // standard DX7 keyboard-scaling curve shapes
+
+/* Original envelope-curve rendering: plots the DX7's own public 4-segment
+ * rate/level envelope model (every segment moves from the previous level
+ * toward rate[i]/level[i], a higher rate meaning a shorter segment) as a
+ * plain SVG polyline. This is a generic, from-scratch visualisation (every
+ * synth editor that shows a DX7 envelope draws some version of this same
+ * curve because the instrument's own envelope model dictates the shape,
+ * not because of any one editor's particular drawing code) -- approximate
+ * for on-screen feedback, not a claim of sample-accurate timing. */
+function drawEnvelope(host, rates, levels){
+  host.innerHTML = "";
+  var w = host.clientWidth || 140, h = host.clientHeight || 60;
+  var svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("width","100%"); svg.setAttribute("height","100%");
+  svg.setAttribute("viewBox","0 0 "+w+" "+h); svg.setAttribute("preserveAspectRatio","none");
+
+  var durations = rates.map(function(r){ return 4 + (99-r)/99*46; });  // 0..99 rate -> ~50..4 units
+  var totalT = durations.reduce(function(a,b){ return a+b; }, 0) || 1;
+  var pad = 4, plotW = w - pad*2, plotH = h - pad*2;
+
+  var pts = [[pad, pad+plotH]];  // start at level 0 (bottom-left)
+  var t = 0;
+  for (var i=0;i<4;i++){
+    t += durations[i];
+    var x = pad + (t/totalT)*plotW;
+    var y = pad + plotH - (levels[i]/99)*plotH;
+    pts.push([x,y]);
+  }
+  var d = "M " + pts.map(function(p){ return p[0]+" "+p[1]; }).join(" L ");
+  var path = document.createElementNS(svg.namespaceURI,"path");
+  path.setAttribute("d", d); path.setAttribute("fill","none");
+  path.setAttribute("stroke","#4ad6d6"); path.setAttribute("stroke-width","2");
+  path.setAttribute("stroke-linejoin","round");
+  svg.appendChild(path);
+  pts.forEach(function(p){
+    var dot = document.createElementNS(svg.namespaceURI,"circle");
+    dot.setAttribute("cx",p[0]); dot.setAttribute("cy",p[1]); dot.setAttribute("r","2.5");
+    dot.setAttribute("fill","#4ad6d6");
+    svg.appendChild(dot);
+  });
+  host.appendChild(svg);
+}
+
+function buildFromChainParams(list){
+  var byKey = {}; list.forEach(function(p){ byKey[p.key]=p; });
+  var gHost=document.getElementById("globalKnobs"), lHost=document.getElementById("lfoKnobs"),
+      peHost=document.getElementById("pitchEgKnobs");
+  GLOBAL_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
+    var opts = (k==="algorithm") ? {onChange:function(v){ renderAlgorithmDiagram(Math.round(v), document.getElementById("algoDiagram")); }} : undefined;
+    knobRefs[k]=makeKnob(k, p.short_name||p.label||k, p.min, p.max, gHost, opts); });
+  LFO_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
+    knobRefs[k]=makeKnob(k, p.short_name||p.label||k, p.min, p.max, lHost); });
+  PITCH_EG_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
+    knobRefs[k]=makeKnob(k, (p.name||k).replace("PEG ",""), p.min, p.max, peHost); });
+
+  var gridHost=document.getElementById("opGrid");
+  for (var opN=1; opN<=6; opN++){
+    (function(opN){
+      var prefix="op"+opN+"_";
+      var panel=document.createElement("div"); panel.className="op-panel";
+      var head=document.createElement("div"); head.className="ophead"; head.textContent="OP "+opN;
+      panel.appendChild(head);
+
+      function subsec(title){
+        var sec=document.createElement("div"); sec.className="subsec";
+        var h=document.createElement("h3"); h.textContent=title; sec.appendChild(h);
+        var grid=document.createElement("div"); grid.className="grid4"; sec.appendChild(grid);
+        panel.appendChild(sec);
+        return grid;
+      }
+
+      // Oscillator: 4-on-4 (Level/Coarse/Fine/Detune row, Mode/VelSens/AMS/RateScale row)
+      var oscHost=subsec("Oscillator");
+      ["level","coarse","fine","detune"].forEach(function(suf){
+        var k=prefix+suf, p=byKey[k]; if(!p) return;
+        knobRefs[k]=makeKnob(k, (p.name||k).replace("Op"+opN+" ",""), p.min, p.max, oscHost, {size:34});
+      });
+      var modeKey=prefix+"osc_mode";
+      if (byKey[modeKey]) knobRefs[modeKey]=makeSelect(modeKey, "Mode", ["Ratio","Fixed"], oscHost);
+      ["vel_sens","amp_mod","rate_scale"].forEach(function(suf){
+        var k=prefix+suf, p=byKey[k]; if(!p) return;
+        knobRefs[k]=makeKnob(k, (p.name||k).replace("Op"+opN+" ",""), p.min, p.max, oscHost, {size:34});
+      });
+
+      // Envelope: rate/level values feed both the 4-on-4 knob rows AND the
+      // visual curve below them (original rendering -- see drawEnvelope()
+      // above the boot code; not any specific editor's drawing code, just
+      // the DX7's own public rate/level envelope model plotted as an SVG
+      // path). Every editor that shows a DX7 envelope draws some version of
+      // this curve; the shape is dictated by the instrument's own envelope
+      // model, not any one tool's creative choice.
+      var egSec=document.createElement("div"); egSec.className="subsec";
+      var egH=document.createElement("h3"); egH.textContent="Envelope"; egSec.appendChild(egH);
+      var envSvgHost=document.createElement("div"); envSvgHost.className="envviz"; egSec.appendChild(envSvgHost);
+      var rateRow=document.createElement("div"); rateRow.className="grid4"; egSec.appendChild(rateRow);
+      var levelRow=document.createElement("div"); levelRow.className="grid4"; egSec.appendChild(levelRow);
+      panel.appendChild(egSec);
+
+      var egState = {r:[0,0,0,0], l:[0,0,0,0]};
+      function redrawEnv(){ drawEnvelope(envSvgHost, egState.r, egState.l); }
+      [1,2,3,4].forEach(function(n){
+        var k=prefix+"eg_r"+n, p=byKey[k]; if(!p) return;
+        knobRefs[k]=makeKnob(k, "R"+n, p.min, p.max, rateRow, {size:34,
+          onChange:function(v){ egState.r[n-1]=v; redrawEnv(); }});
+      });
+      [1,2,3,4].forEach(function(n){
+        var k=prefix+"eg_l"+n, p=byKey[k]; if(!p) return;
+        knobRefs[k]=makeKnob(k, "L"+n, p.min, p.max, levelRow, {size:34,
+          onChange:function(v){ egState.l[n-1]=v; redrawEnv(); }});
+      });
+      redrawEnv();
+
+      var scaleHost=subsec("Keyboard Scaling");
+      OP_SCALE_KNOBS.forEach(function(suf){
+        var k=prefix+suf, p=byKey[k]; if(!p) return;
+        knobRefs[k]=makeKnob(k, (p.name||k).replace("Op"+opN+" ",""), p.min, p.max, scaleHost, {size:34});
+      });
+      ["key_lc","key_rc"].forEach(function(suf){
+        var k=prefix+suf;
+        if (byKey[k]) knobRefs[k]=makeSelect(k, suf==="key_lc"?"L Curve":"R Curve", CURVE_OPTIONS, scaleHost);
+      });
+
+      gridHost.appendChild(panel);
+    })(opN);
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * Bank (cartridge) picker.
+ * ------------------------------------------------------------------- */
+function refreshBankList(){
+  getParam("syx_bank_list").then(function(text){
+    var list=[]; try{ list=JSON.parse(text)||[]; }catch(e){}
+    var sel=document.getElementById("bankSelect");
+    sel.innerHTML="";
+    list.forEach(function(b){ var o=document.createElement("option"); o.value=b.index; o.textContent=b.label; sel.appendChild(o); });
+    getParam("syx_bank_index").then(function(idx){ if(idx!=null) sel.value=idx; });
+    getParam("bank_count").then(function(cnt){ document.getElementById("bankIdx").textContent = cnt ? "/ "+cnt : ""; });
+  });
+}
+function goToBank(idx){ setParam("syx_bank_index", idx); setTimeout(function(){ refreshBankList(); refreshPatchList(true); syncPatchName(); },200); }
+document.getElementById("bankPrev").onclick=function(){ setParam("prev_syx_bank","1"); setTimeout(function(){ refreshBankList(); refreshPatchList(true); syncPatchName(); },200); };
+document.getElementById("bankNext").onclick=function(){ setParam("next_syx_bank","1"); setTimeout(function(){ refreshBankList(); refreshPatchList(true); syncPatchName(); },200); };
+document.getElementById("bankSelect").onchange=function(e){ goToBank(e.target.value); };
+
+/* ---------------------------------------------------------------------
+ * Patch picker — real names via the added patch_list key (see
+ * dx7_plugin.cpp's MockbaMod/Force port addition), same reasoning as
+ * force-jv880's own patch_list fix: get_param only ever exposed the
+ * CURRENTLY loaded patch's name, not the whole bank's names at once.
+ * ------------------------------------------------------------------- */
+var pPatchList=null, pPatchListCount=-1;
+function refreshPatchList(force){
+  getParam("preset_count").then(function(cntStr){
+    var cnt=parseInt(cntStr||"0",10);
+    if (cnt===pPatchListCount && !force) return;
+    pPatchListCount=cnt;
+    getParam("patch_list").then(function(text){
+      try{ pPatchList=JSON.parse(text)||[]; }catch(e){ pPatchList=[]; }
+      var sel=document.getElementById("patchSelect");
+      sel.innerHTML="";
+      for(var i=0;i<cnt;i++){
+        var o=document.createElement("option"); o.value=i;
+        o.textContent = (pPatchList[i] ? pPatchList[i].name.trim() : ("Patch "+i));
+        sel.appendChild(o);
+      }
+      document.getElementById("patchIdx").textContent = cnt ? "/ "+cnt : "";
+      getParam("preset").then(function(idx){ if(idx!=null) sel.value=idx; });
+    });
+  });
+}
+function syncPatchName(){
+  var tries=0;
+  (function poll(){
+    getParam("patch_name").then(function(v){
+      // Patch swap confirmed landed -- reseed every knob (and, via the
+      // algorithm knob's onChange, the algorithm diagram) from the
+      // now-current device state. Previously only patchName/patchSelect
+      // were refreshed here, leaving every operator knob showing the
+      // PREVIOUS patch's values until manually touched.
+      if (v){ document.getElementById("patchName").textContent=v.trim(); if (pDescribeList) seedKnobs(pDescribeList); }
+      else if(++tries<12) setTimeout(poll,150);
+    });
+  })();
+}
+function goToPatch(idx){ setParam("preset", idx); document.getElementById("patchSelect").value=idx; syncPatchName(); }
+document.getElementById("patchPrev").onclick=function(){ getParam("preset").then(function(v){ var cnt=pPatchListCount||1; goToPatch(((parseInt(v||0,10)-1)%cnt+cnt)%cnt); }); };
+document.getElementById("patchNext").onclick=function(){ getParam("preset").then(function(v){ var cnt=pPatchListCount||1; goToPatch((parseInt(v||0,10)+1)%cnt); }); };
+document.getElementById("patchSelect").onchange=function(e){ goToPatch(parseInt(e.target.value,10)); };
+document.getElementById("btnSync").onclick=function(){ refreshBankList(); refreshPatchList(true); syncPatchName(); };
+
+/* ---------------------------------------------------------------------
+ * Boot: fetch chain_params, build controls, seed current values, load
+ * bank + patch lists.
+ * ------------------------------------------------------------------- */
+function seedKnobs(list){
+  list.forEach(function(p){
+    var ref = knobRefs[p.key];
+    if (!ref) return;
+    getParam(p.key).then(function(v){ if(v!=null && v!=="") ref.set(parseFloat(v)); });
+  });
+}
+var pDescribeList=null;
+fetch("/describe").then(function(r){ return r.ok ? r.json() : []; })
+  .then(function(list){
+    pDescribeList=list;
+    buildFromChainParams(list);
+    seedKnobs(list);
+    refreshBankList();
+    refreshPatchList(true);
+    syncPatchName();
+  })
+  .catch(function(){ document.getElementById("patchName").textContent="engine not running"; });
+</script>

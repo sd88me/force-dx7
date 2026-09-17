@@ -1,0 +1,492 @@
+/* dx7_host.cpp — Force/MockbaMod runtime host for the ported Dexed (DX7/MSFA)
+ * DSP synth. Same porting pattern as force-jv880/src/jv_host.cpp and
+ * force-maze/src/maze_host.cpp — plays the role Move's chain host plays for
+ * dx7_plugin.cpp:
+ *
+ *   Move/Schwung host                     this shim
+ *   -------------------------------------- --------------------------------
+ *   dlopen(dsp.so), move_plugin_init_v2    links dx7_plugin.o + msfa/*.cc
+ *                                          directly, calls it directly
+ *   on_midi() per incoming note            RtMidi input callback -> on_midi()
+ *   render_block() per SPI-callback block  wall-clock timer thread -> render_block()
+ *   set_param(key, "64") from a knob       a local control socket, or CC on
+ *                                          the control channel -> set_param()
+ *   int16 stereo out via the mailbox       float32 into ForceAudioIn's shared-
+ *                                          memory ring (forceAudioInject.h)
+ *
+ * dx7_plugin.cpp + msfa/*.cc are vendored VERBATIM from schwung-dx7 — unlike
+ * force-jv880's jv880_plugin.cpp, this one needed ZERO edits for the Force
+ * port: no SCHED_FIFO anywhere in it (confirmed by reading it), and its one
+ * NEON-optimized path (msfa/fm_op_kernel.cc) is gated behind an explicit,
+ * project-defined HAVE_NEON macro rather than the compiler's automatic
+ * __ARM_NEON (which is what bit force-jv880's resampler on armv7) — simply
+ * not defining HAVE_NEON in the build (see scripts/build.sh) skips that path
+ * entirely and falls back to the portable scalar kernel, with no portability
+ * bug to fix. create_instance() also scans banks/ synchronously (no
+ * background load thread the way jv880_plugin.cpp's does), so there's no
+ * loading_complete race to poll for either — chain_params is available
+ * immediately after create_instance returns.
+ *
+ * Build: see scripts/build.sh (native armhf under QEMU, links -lasound
+ * -lpthread -lrt, same toolchain as force-jv880/force-maze).
+ */
+
+#include <atomic>
+#include <chrono>
+#include <cmath>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <unordered_map>
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/un.h>
+#include <unistd.h>
+
+#include "rtmidi/RtMidi.h"
+#include "plugin_api_v1.h"
+#include "forceAudioInject.h"
+
+extern "C" plugin_api_v2_t *move_plugin_init_v2(const void *host);
+
+/* ---------------------------------------------------------------------------
+ * Globals
+ * ------------------------------------------------------------------------- */
+static std::atomic<bool> g_run{true};
+static std::mutex        g_lock;
+static plugin_api_v2_t  *g_api  = nullptr;
+static void             *g_inst = nullptr;
+
+static ai_shm_t *g_shm = nullptr;
+static std::atomic<uint64_t> g_ring_drops{0};
+
+static std::string g_chain_params_json;
+static std::string g_ctrl_sock_path = "/tmp/dx7_ctrl.sock";
+static bool         g_verbose = false;
+/* Diagnostic only: bypasses dx7_plugin.cpp/MSFA entirely and writes a pure
+ * 440Hz sine straight into the ring, to isolate whether audible grit/
+ * distortion is in this shim's ring/mixing pipeline or in the DX7 render
+ * path itself -- see DESIGN.md's writeup of this specific investigation. */
+static bool         g_test_tone = false;
+static unsigned     g_mix_slot = 2;   /* 0 used by force-maze, 1 by force-jv880 (see their own headers) */
+
+/* ---------------------------------------------------------------------------
+ * CC -> set_param, for a Force Q-Link-mapped MIDI track. 16 of Dexed's 20
+ * chain_params (module.json) fit one Q-Link bank; lfo_delay/lfo_pms/lfo_sync/
+ * transpose (a fixed middle-C reference note, distinct from octave_transpose)
+ * are web-panel-only, matching Move's own module.json "knobs" curation
+ * philosophy (it only picks 5 for Move's few hardware knobs) extended to
+ * the Force's 16-knob Q-Link bank. All of Dexed's chain_params are plain
+ * integers (v2_set_param uses atoi() throughout, confirmed by reading it),
+ * same as force-jv880's — one PARAMS kind, no float/log/momentary needed.
+ * ------------------------------------------------------------------------- */
+struct ParamSpec {
+    const char *key;
+    int         lo, hi;
+    int         cc;
+};
+static const ParamSpec PARAMS[] = {
+    { "preset",           0,  31, 20 },
+    { "output_level",     0, 100, 21 },
+    { "octave_transpose",-3,   3, 22 },
+    { "algorithm",        1,  32, 23 },
+    { "feedback",         0,   7, 24 },
+    { "osc_sync",         0,   1, 25 },
+    { "lfo_speed",        0,  99, 26 },
+    { "lfo_pmd",          0,  99, 27 },
+    { "lfo_amd",          0,  99, 28 },
+    { "lfo_wave",         0,   5, 29 },
+    { "op1_level",        0,  99, 30 },
+    { "op2_level",        0,  99, 31 },
+    { "op3_level",        0,  99, 32 },
+    { "op4_level",        0,  99, 33 },
+    { "op5_level",        0,  99, 34 },
+    { "op6_level",        0,  99, 35 },
+};
+static const int N_PARAMS = (int)(sizeof(PARAMS) / sizeof(PARAMS[0]));
+static std::unordered_map<int, int> g_cc2param;
+static int g_ctrl_ch = 0;
+
+static void apply_cc(int idx, int value /* 0..127 */) {
+    const ParamSpec &p = PARAMS[idx];
+    int v = p.lo + (int)std::lround((p.hi - p.lo) * (value / 127.0));
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%d", v);
+    { std::lock_guard<std::mutex> lk(g_lock); g_api->set_param(g_inst, p.key, buf); }
+    if (g_verbose) fprintf(stderr, "[dx7] cc %d -> %s = %s\n", p.cc, p.key, buf);
+}
+
+/* ---------------------------------------------------------------------------
+ * Shared-memory ring setup (producer side). Dexed is audio_out-only, same
+ * shape as force-jv880/force-maze's ring use. Default slot 2 (0=maze,
+ * 1=jv880 on this device — see NSMODULE.json if that ever needs changing).
+ * ------------------------------------------------------------------------- */
+static char g_shm_name[24];
+
+static bool shm_setup() {
+    ai_shm_name(g_mix_slot, g_shm_name, sizeof(g_shm_name));
+    shm_unlink(g_shm_name);
+    int fd = shm_open(g_shm_name, O_CREAT | O_RDWR, 0666);
+    if (fd < 0) { perror("shm_open"); return false; }
+    if (ftruncate(fd, AI_SHM_BYTES) != 0) { perror("ftruncate"); close(fd); return false; }
+    void *m = mmap(nullptr, AI_SHM_BYTES, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    close(fd);
+    if (m == MAP_FAILED) { perror("mmap"); return false; }
+
+    g_shm = (ai_shm_t *)m;
+    memset(g_shm, 0, AI_SHM_BYTES);
+    g_shm->rate = (uint32_t)MOVE_SAMPLE_RATE;
+    g_shm->channels = 2;
+    g_shm->enabled = 1;
+    /* Default headroom below unity: dx7_plugin.cpp's own render path hard-
+     * clips at int16 full-scale (confirmed by reading v2_render_block --
+     * proper saturation, no wraparound bug, but a real ceiling), and
+     * forceAudioIn.so mixes this ADDITIVELY on top of whatever else is
+     * already on the capture input, which can push an already-hot signal
+     * over that ceiling a second time. Leaves margin by default; raise via
+     * "mix.gain" (the web UI doesn't expose this yet) if a patch is quiet. */
+    g_shm->gain = 0.6f;
+    g_shm->channel_mask = AI_CHAN_LR;
+    __atomic_store_n(&g_shm->magic, AI_MAGIC, __ATOMIC_RELEASE);
+    return true;
+}
+
+static void ring_push(const float *interleaved, uint32_t frames) {
+    if (!g_shm) return;
+    uint32_t head = g_shm->head;
+    uint32_t tail = __atomic_load_n(&g_shm->tail, __ATOMIC_ACQUIRE);
+    uint32_t space = (AI_RING_FRAMES - 1) - ((head - tail) & (AI_RING_FRAMES - 1));
+
+    uint32_t take = frames;
+    if (take > space) { take = space; g_ring_drops++; }
+    for (uint32_t i = 0; i < take; i++) {
+        uint32_t fr = (head + i) & (AI_RING_FRAMES - 1);
+        float *dst = &g_shm->ring[(size_t)fr * AI_MAX_CH];
+        dst[0] = interleaved[2 * i];
+        dst[1] = interleaved[2 * i + 1];
+    }
+    __atomic_store_n(&g_shm->head, (head + take) & (AI_RING_FRAMES - 1), __ATOMIC_RELEASE);
+    g_shm->frames_written += take;
+}
+
+/* ---------------------------------------------------------------------------
+ * RtMidi input — notes/pitch-bend/aftertouch/sustain pass straight through
+ * to on_midi (see module.json: aftertouch, sustain CC64, pitch bend all
+ * natively supported by dx7_plugin.cpp), Control Change on the control
+ * channel is intercepted for the Q-Link CC table above.
+ * ------------------------------------------------------------------------- */
+static void on_midi_cb(double /*dt*/, std::vector<unsigned char> *msg, void * /*ud*/) {
+    if (!msg || msg->empty()) return;
+    const uint8_t *b = msg->data();
+    size_t len = msg->size();
+    uint8_t status = b[0];
+    uint8_t type = status & 0xF0;
+    uint8_t chan = status & 0x0F;
+
+    if (type == 0xB0 && len >= 3 && chan == (uint8_t)g_ctrl_ch) {
+        auto it = g_cc2param.find(b[1]);
+        if (it != g_cc2param.end()) apply_cc(it->second, b[2]);
+        return;
+    }
+
+    std::lock_guard<std::mutex> lk(g_lock);
+    g_api->on_midi(g_inst, b, (int)len, 0 /* MOVE_MIDI_SOURCE_INTERNAL */);
+}
+
+/* ---------------------------------------------------------------------------
+ * Timer thread — dx7_plugin.cpp's render_block is a synchronous render
+ * (unlike jv880_plugin.cpp's own background emu thread + drain), so this
+ * loop IS the synth's real-time clock, same as force-maze's maze_host.cpp.
+ * Elapsed-real-time frame count, never a fixed period — see maze_host.cpp's
+ * own header comment for why (sleep_for() jitter on a plain SCHED_OTHER
+ * thread means a fixed cadence silently falls behind real time).
+ * ------------------------------------------------------------------------- */
+static std::atomic<double>   g_max_wake_ms{0.0};
+static std::atomic<uint64_t> g_late_wakes{0};
+static std::atomic<uint64_t> g_total_wakes{0};
+
+/* Clock-rate compensation: same fix, same measured ~1000ppm constant, as
+ * just applied to force-jv880's jv_host.cpp -- see that file's comment for
+ * the full writeup. Originally proven in force-maze's maze_host.cpp; this
+ * timer-loop pattern was copied from there but this one constant wasn't
+ * carried over into either newer host shim until now. */
+constexpr double RATE_CORRECTION = 44100.0 / (44100.0 - 45.0);   /* ~1.00102 */
+
+static void timer_loop() {
+    constexpr int MAX_FRAMES = 4096;
+    int16_t  pcm[MAX_FRAMES * 2];
+    float    flt[MAX_FRAMES * 2];
+    const auto period = std::chrono::microseconds(1500);
+
+    using clock = std::chrono::steady_clock;
+    auto prev = clock::now();
+    auto last_stat = prev;
+
+    /* REVERTED 2026-09-14: the fixed-128-frame-block version below (still
+     * visible in git history) traded the original grit bug for a worse one
+     * -- draining catch-up frames in an unpaced tight loop (up to 32
+     * back-to-back 128-frame chunks with zero pacing between them, versus
+     * this version's single bounded call) produced a much larger startup
+     * burst that got the ring stuck at a ~4400-frame backlog indefinitely
+     * (reproduced fresh on every restart; forceAudioIn.so's own hysteresis-
+     * trim apparently never triggers to correct it, unlike the smaller
+     * bursts this version produces), audible as breaking up -- worse than
+     * the grit it fixed. Back to variable-length calls (proven stable on
+     * force-jv880/force-maze) while a safer fix for the original grit is
+     * worked out -- possibly pacing fixed-block catch-up with real sleeps
+     * between chunks instead of draining them all at once. */
+    while (g_run.load()) {
+        std::this_thread::sleep_for(period);
+        auto now = clock::now();
+        double secs = std::chrono::duration<double>(now - prev).count();
+        prev = now;
+
+        double ms = secs * 1000.0;
+        double seen_max = g_max_wake_ms.load();
+        if (ms > seen_max) g_max_wake_ms.store(ms);
+        g_total_wakes++;
+
+        int frames = (int)std::lround(secs * MOVE_SAMPLE_RATE * RATE_CORRECTION);
+        if (frames < 1) frames = 1;
+        if (frames > 400) g_late_wakes++;
+        if (frames > MAX_FRAMES) frames = MAX_FRAMES;
+
+        if (g_test_tone) {
+            static double phase = 0.0;
+            const double freq = 440.0, twoPi = 6.283185307179586;
+            for (int i = 0; i < frames; i++) {
+                float s = 0.2f * (float)std::sin(phase);
+                flt[i*2] = s; flt[i*2+1] = s;
+                phase += twoPi * freq / MOVE_SAMPLE_RATE;
+                if (phase > twoPi) phase -= twoPi;
+            }
+        } else {
+            {
+                std::lock_guard<std::mutex> lk(g_lock);
+                g_api->render_block(g_inst, pcm, frames);
+            }
+            for (int i = 0; i < frames * 2; i++) flt[i] = pcm[i] / 32768.0f;
+        }
+        ring_push(flt, (uint32_t)frames);
+
+        if (now - last_stat >= std::chrono::seconds(5)) {
+            last_stat = now;
+            uint32_t backlog = g_shm ? (uint32_t)((g_shm->head - __atomic_load_n(&g_shm->tail, __ATOMIC_ACQUIRE))
+                                                   & (AI_RING_FRAMES - 1))
+                                      : 0;
+            fprintf(stderr, "[dx7] render thread: max wake gap %.1fms, %llu/%llu wakes > 9ms, ring drops %llu, "
+                            "backlog %u frames\n",
+                    g_max_wake_ms.load(),
+                    (unsigned long long)g_late_wakes.load(), (unsigned long long)g_total_wakes.load(),
+                    (unsigned long long)g_ring_drops.load(), backlog);
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------------
+ * Control socket — same plain newline-terminated protocol as
+ * force-jv880/force-maze's own host shims:
+ *
+ *   SET <key> <value>\n   -> "OK\n" or "ERR\n"
+ *   GET <key>\n           -> "<value>\n" or "ERR\n"
+ *   DESCRIBE\n            -> the module's chain_params JSON, one line
+ *   NOTE <note> <vel>\n   -> trigger a note (web UI "audition" button)
+ * ------------------------------------------------------------------------- */
+static bool handle_mix_set(const std::string &key, const std::string &val) {
+    if (key == "mix.enabled") { g_shm->enabled = (val == "1" || val == "true") ? 1u : 0u; return true; }
+    if (key == "mix.gain") { g_shm->gain = std::strtof(val.c_str(), nullptr) / 100.0f; return true; }
+    if (key == "mix.channel") {
+        g_shm->channel_mask = (val == "L") ? AI_CHAN_L : (val == "R") ? AI_CHAN_R : AI_CHAN_LR;
+        return true;
+    }
+    return false;
+}
+static bool handle_mix_get(const std::string &key, std::string &out) {
+    if (key == "mix.enabled") { out = g_shm->enabled ? "1" : "0"; return true; }
+    if (key == "mix.gain") { char b[32]; std::snprintf(b, sizeof(b), "%.1f", g_shm->gain * 100.0f); out = b; return true; }
+    if (key == "mix.channel") {
+        uint32_t m = g_shm->channel_mask;
+        out = (m == AI_CHAN_L) ? "L" : (m == AI_CHAN_R) ? "R" : "L+R";
+        return true;
+    }
+    return false;
+}
+
+static void handle_ctrl_line(int fd, const std::string &line) {
+    char cmd[16] = {0}, key[64] = {0}, val[256] = {0};
+    if (sscanf(line.c_str(), "%15s", cmd) != 1) { send(fd, "ERR\n", 4, 0); return; }
+
+    if (!strcmp(cmd, "DESCRIBE")) {
+        std::string reply = g_chain_params_json + "\n";
+        send(fd, reply.c_str(), reply.size(), 0);
+        return;
+    }
+    if (!strcmp(cmd, "SET") && sscanf(line.c_str(), "%*s %63s %255[^\n]", key, val) == 2) {
+        if (handle_mix_set(key, val)) { send(fd, "OK\n", 3, 0); return; }
+        std::lock_guard<std::mutex> lk(g_lock);
+        g_api->set_param(g_inst, key, val);
+        send(fd, "OK\n", 3, 0);
+        return;
+    }
+    if (!strcmp(cmd, "GET") && sscanf(line.c_str(), "%*s %63s", key) == 1) {
+        std::string mix_val;
+        if (handle_mix_get(key, mix_val)) { std::string reply = mix_val + "\n"; send(fd, reply.c_str(), reply.size(), 0); return; }
+        static char buf[65536];
+        int n;
+        { std::lock_guard<std::mutex> lk(g_lock); n = g_api->get_param(g_inst, key, buf, sizeof(buf)); }
+        if (n <= 0) { send(fd, "ERR\n", 4, 0); return; }
+        std::string reply(buf, n); reply += "\n";
+        send(fd, reply.c_str(), reply.size(), 0);
+        return;
+    }
+    if (!strcmp(cmd, "NOTE")) {
+        int note = 60, vel = 100;
+        sscanf(line.c_str(), "%*s %d %d", &note, &vel);
+        uint8_t on[3]  = { 0x90, (uint8_t)note, (uint8_t)vel };
+        uint8_t off[3] = { 0x80, (uint8_t)note, 0 };
+        { std::lock_guard<std::mutex> lk(g_lock); g_api->on_midi(g_inst, on, 3, 0); }
+        std::thread([off]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(150));
+            std::lock_guard<std::mutex> lk(g_lock);
+            g_api->on_midi(g_inst, off, 3, 0);
+        }).detach();
+        send(fd, "OK\n", 3, 0);
+        return;
+    }
+    send(fd, "ERR\n", 4, 0);
+}
+
+static void ctrl_server_loop(int lfd) {
+    while (g_run.load()) {
+        int cfd = accept(lfd, nullptr, nullptr);
+        if (cfd < 0) continue;
+        char buf[512];
+        ssize_t n = recv(cfd, buf, sizeof(buf) - 1, 0);
+        if (n > 0) {
+            buf[n] = 0;
+            std::string line(buf);
+            size_t nl = line.find('\n');
+            if (nl != std::string::npos) line.resize(nl);
+            if (g_verbose) fprintf(stderr, "[dx7] ctrl: %s\n", line.c_str());
+            handle_ctrl_line(cfd, line);
+        }
+        close(cfd);
+    }
+}
+
+static int ctrl_socket_listen(const std::string &path) {
+    unlink(path.c_str());
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) { perror("socket"); return -1; }
+    struct sockaddr_un addr{};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, path.c_str(), sizeof(addr.sun_path) - 1);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) { perror("bind"); close(fd); return -1; }
+    chmod(path.c_str(), 0666);
+    if (listen(fd, 8) != 0) { perror("listen"); close(fd); return -1; }
+    return fd;
+}
+
+/* ---------------------------------------------------------------------------
+ * main
+ * ------------------------------------------------------------------------- */
+static void on_signal(int) { g_run.store(false); }
+
+static void usage(const char *me) {
+    fprintf(stderr,
+        "usage: %s [options]\n"
+        "  -v                    verbose\n"
+        "  --client NAME         ALSA client name       (default: Mockba DX7)\n"
+        "  --module-dir PATH     dir containing module.json + banks/ (default: .)\n"
+        "  --ctrl-sock PATH      control socket path     (default: /tmp/dx7_ctrl.sock)\n"
+        "  --control-channel N   1-16, CC-in for the Q-Link track (default: 1)\n"
+        "  --mix-slot N          voice slot 0..%d for forceAudioIn.so (default: 2 -\n"
+        "                        0 is force-maze's own default, 1 is force-jv880's)\n",
+        me, AI_MAX_VOICES - 1);
+}
+
+int main(int argc, char **argv) {
+    std::string client = "Mockba DX7";
+    std::string module_dir = ".";
+
+    for (int i = 1; i < argc; i++) {
+        std::string a = argv[i];
+        if      (a == "-v")                        g_verbose = true;
+        else if (a == "--client"     && i+1 < argc) client = argv[++i];
+        else if (a == "--module-dir" && i+1 < argc) module_dir = argv[++i];
+        else if (a == "--ctrl-sock"  && i+1 < argc) g_ctrl_sock_path = argv[++i];
+        else if (a == "--control-channel" && i+1 < argc) g_ctrl_ch = (std::atoi(argv[++i]) - 1) & 0x0F;
+        else if (a == "--mix-slot" && i+1 < argc) {
+            int s = std::atoi(argv[++i]);
+            if (s < 0 || s >= AI_MAX_VOICES) { usage(argv[0]); return 2; }
+            g_mix_slot = (unsigned)s;
+        }
+        else if (a == "--test-tone") { g_test_tone = true; }
+        else { usage(argv[0]); return (a == "-h" || a == "--help") ? 0 : 2; }
+    }
+
+    for (int i = 0; i < N_PARAMS; i++) g_cc2param[PARAMS[i].cc] = i;
+
+    if (!shm_setup()) { fprintf(stderr, "[dx7] shared memory setup failed\n"); return 1; }
+
+    g_api = move_plugin_init_v2(nullptr);
+    if (!g_api || g_api->api_version != 2) { fprintf(stderr, "[dx7] core init failed\n"); return 1; }
+    g_inst = g_api->create_instance(module_dir.c_str(), nullptr);
+    if (!g_inst) { fprintf(stderr, "[dx7] create_instance failed\n"); return 1; }
+
+    {
+        char buf[32768];
+        int n = g_api->get_param(g_inst, "chain_params", buf, sizeof(buf));
+        g_chain_params_json = (n > 0) ? std::string(buf, n) : std::string("{}");
+        if (n <= 0)
+            fprintf(stderr, "[dx7] warning: chain_params not found (module.json missing from %s?)\n",
+                    module_dir.c_str());
+    }
+
+    RtMidiIn *in = nullptr;
+    try {
+        in = new RtMidiIn(RtMidi::UNSPECIFIED, client, 256);
+        in->openVirtualPort("In");
+        in->ignoreTypes(true, false, true);   /* keep sysex passthrough off, note+CC/aftertouch on */
+        in->setCallback(&on_midi_cb, nullptr);
+    } catch (RtMidiError &e) {
+        fprintf(stderr, "[dx7] MIDI setup failed: %s\n", e.getMessage().c_str());
+        return 1;
+    }
+
+    int lfd = ctrl_socket_listen(g_ctrl_sock_path);
+    if (lfd < 0) { fprintf(stderr, "[dx7] control socket setup failed\n"); return 1; }
+
+    std::signal(SIGINT, on_signal);
+    std::signal(SIGTERM, on_signal);
+
+    fprintf(stderr,
+        "[dx7] up. port '%s:In'  ctrl socket %s  shm %s  ctrl ch %d\n"
+        "[dx7] route a MIDI track to '%s:In' for notes and CC (Q-Link); audio\n"
+        "[dx7] is mixed into the Force's capture input via ForceAudioIn (must be enabled).\n",
+        client.c_str(), g_ctrl_sock_path.c_str(), g_shm_name, g_ctrl_ch + 1, client.c_str());
+
+    std::thread timer(timer_loop);
+    std::thread ctrl(ctrl_server_loop, lfd);
+
+    while (g_run.load()) std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    timer.join();
+    close(lfd);
+    unlink(g_ctrl_sock_path.c_str());
+    {
+        std::lock_guard<std::mutex> lk(g_lock);
+        g_api->destroy_instance(g_inst);
+    }
+    delete in;
+    if (g_shm) { munmap(g_shm, AI_SHM_BYTES); shm_unlink(g_shm_name); }
+    fprintf(stderr, "[dx7] bye\n");
+    return 0;
+}
