@@ -2192,13 +2192,13 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
 
         /* LFO params - using int for lfo_wave since get_param returns integers */
         w += snprintf(buf + w, buf_len - w,
-            "{\"key\":\"lfo_speed\",\"name\":\"LFO Spd\",\"type\":\"int\",\"min\":0,\"max\":99},"
-            "{\"key\":\"lfo_delay\",\"name\":\"LFO Dly\",\"type\":\"int\",\"min\":0,\"max\":99},"
-            "{\"key\":\"lfo_pmd\",\"name\":\"LFO PMD\",\"type\":\"int\",\"min\":0,\"max\":99},"
-            "{\"key\":\"lfo_amd\",\"name\":\"LFO AMD\",\"type\":\"int\",\"min\":0,\"max\":99},"
-            "{\"key\":\"lfo_pms\",\"name\":\"LFO PMS\",\"type\":\"int\",\"min\":0,\"max\":7},"
-            "{\"key\":\"lfo_wave\",\"name\":\"LFO Wave\",\"type\":\"int\",\"min\":0,\"max\":5},"
-            "{\"key\":\"lfo_sync\",\"name\":\"LFO Sync\",\"type\":\"int\",\"min\":0,\"max\":1},");
+            "{\"key\":\"lfo_speed\",\"name\":\"LFO Speed\",\"type\":\"int\",\"min\":0,\"max\":99},"
+            "{\"key\":\"lfo_delay\",\"name\":\"LFO Delay\",\"type\":\"int\",\"min\":0,\"max\":99},"
+            "{\"key\":\"lfo_pmd\",\"name\":\"LFO Pitch Mod\",\"type\":\"int\",\"min\":0,\"max\":99},"
+            "{\"key\":\"lfo_amd\",\"name\":\"LFO Amp Mod\",\"type\":\"int\",\"min\":0,\"max\":99},"
+            "{\"key\":\"lfo_pms\",\"name\":\"LFO Pitch Sens\",\"type\":\"int\",\"min\":0,\"max\":7},"
+            "{\"key\":\"lfo_wave\",\"name\":\"LFO Waveform\",\"type\":\"int\",\"min\":0,\"max\":5},"
+            "{\"key\":\"lfo_sync\",\"name\":\"LFO Key Sync\",\"type\":\"int\",\"min\":0,\"max\":1},");
 
         /* Pitch EG params */
         w += snprintf(buf + w, buf_len - w,
@@ -2214,14 +2214,14 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
         /* Per-operator params for all 6 operators - all use int type for Shadow UI compatibility */
         for (int op = 1; op <= 6; op++) {
             w += snprintf(buf + w, buf_len - w,
-                "{\"key\":\"op%d_level\",\"name\":\"Op%d Lvl\",\"type\":\"int\",\"min\":0,\"max\":99},"
-                "{\"key\":\"op%d_coarse\",\"name\":\"Op%d Crs\",\"type\":\"int\",\"min\":0,\"max\":31},"
-                "{\"key\":\"op%d_fine\",\"name\":\"Op%d Fin\",\"type\":\"int\",\"min\":0,\"max\":99},"
-                "{\"key\":\"op%d_detune\",\"name\":\"Op%d Det\",\"type\":\"int\",\"min\":-7,\"max\":7},"
+                "{\"key\":\"op%d_level\",\"name\":\"Op%d Level\",\"type\":\"int\",\"min\":0,\"max\":99},"
+                "{\"key\":\"op%d_coarse\",\"name\":\"Op%d Coarse\",\"type\":\"int\",\"min\":0,\"max\":31},"
+                "{\"key\":\"op%d_fine\",\"name\":\"Op%d Fine\",\"type\":\"int\",\"min\":0,\"max\":99},"
+                "{\"key\":\"op%d_detune\",\"name\":\"Op%d Detune\",\"type\":\"int\",\"min\":-7,\"max\":7},"
                 "{\"key\":\"op%d_osc_mode\",\"name\":\"Op%d Mode\",\"type\":\"int\",\"min\":0,\"max\":1},"
-                "{\"key\":\"op%d_vel_sens\",\"name\":\"Op%d Vel\",\"type\":\"int\",\"min\":0,\"max\":7},"
-                "{\"key\":\"op%d_amp_mod\",\"name\":\"Op%d AMS\",\"type\":\"int\",\"min\":0,\"max\":3},"
-                "{\"key\":\"op%d_rate_scale\",\"name\":\"Op%d RS\",\"type\":\"int\",\"min\":0,\"max\":7},",
+                "{\"key\":\"op%d_vel_sens\",\"name\":\"Op%d Vel Sens\",\"type\":\"int\",\"min\":0,\"max\":7},"
+                "{\"key\":\"op%d_amp_mod\",\"name\":\"Op%d Amp Mod\",\"type\":\"int\",\"min\":0,\"max\":3},"
+                "{\"key\":\"op%d_rate_scale\",\"name\":\"Op%d Rate Scale\",\"type\":\"int\",\"min\":0,\"max\":7},",
                 op, op, op, op, op, op, op, op, op, op, op, op, op, op, op, op);
 
             /* Operator EG */
@@ -2238,9 +2238,9 @@ static int v2_get_param(void *instance, const char *key, char *buf, int buf_len)
 
             /* Operator kbd scaling - using int (0-3) instead of enum for Shadow UI compatibility */
             w += snprintf(buf + w, buf_len - w,
-                "{\"key\":\"op%d_key_bp\",\"name\":\"Op%d BP\",\"type\":\"int\",\"min\":0,\"max\":99},"
-                "{\"key\":\"op%d_key_ld\",\"name\":\"Op%d LD\",\"type\":\"int\",\"min\":0,\"max\":99},"
-                "{\"key\":\"op%d_key_rd\",\"name\":\"Op%d RD\",\"type\":\"int\",\"min\":0,\"max\":99},"
+                "{\"key\":\"op%d_key_bp\",\"name\":\"Op%d Break Point\",\"type\":\"int\",\"min\":0,\"max\":99},"
+                "{\"key\":\"op%d_key_ld\",\"name\":\"Op%d Left Depth\",\"type\":\"int\",\"min\":0,\"max\":99},"
+                "{\"key\":\"op%d_key_rd\",\"name\":\"Op%d Right Depth\",\"type\":\"int\",\"min\":0,\"max\":99},"
                 "{\"key\":\"op%d_key_lc\",\"name\":\"Op%d LC\",\"type\":\"int\",\"min\":0,\"max\":3},"
                 "{\"key\":\"op%d_key_rc\",\"name\":\"Op%d RC\",\"type\":\"int\",\"min\":0,\"max\":3}%s",
                 op, op, op, op, op, op, op, op, op, op, op < 6 ? "," : "");

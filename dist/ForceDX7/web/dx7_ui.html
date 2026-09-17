@@ -317,9 +317,9 @@ function buildFromChainParams(list){
       peHost=document.getElementById("pitchEgKnobs");
   GLOBAL_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
     var opts = (k==="algorithm") ? {onChange:function(v){ renderAlgorithmDiagram(Math.round(v), document.getElementById("algoDiagram")); }} : undefined;
-    knobRefs[k]=makeKnob(k, p.short_name||p.label||k, p.min, p.max, gHost, opts); });
+    knobRefs[k]=makeKnob(k, p.name||k, p.min, p.max, gHost, opts); });
   LFO_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
-    knobRefs[k]=makeKnob(k, p.short_name||p.label||k, p.min, p.max, lHost); });
+    knobRefs[k]=makeKnob(k, p.name||k, p.min, p.max, lHost); });
   PITCH_EG_KEYS.forEach(function(k){ var p=byKey[k]; if(!p) return;
     knobRefs[k]=makeKnob(k, (p.name||k).replace("PEG ",""), p.min, p.max, peHost); });
 
@@ -361,6 +361,16 @@ function buildFromChainParams(list){
       // model, not any one tool's creative choice.
       var egSec=document.createElement("div"); egSec.className="subsec";
       var egH=document.createElement("h3"); egH.textContent="Envelope"; egSec.appendChild(egH);
+      // DX7's own rate/level model, not ADSR: R1-R4 are SPEEDS (higher = faster)
+      // the level glides toward each target, not durations; L1-R4 are the
+      // TARGET LEVELS themselves (L1 is the initial attack peak, L2/L3 are
+      // optional intermediate decay/sustain plateaus, L4 is the release
+      // target, usually 0). See the curve below for how a given patch's
+      // numbers actually shape the sound.
+      var egNote=document.createElement("div"); egNote.className="note";
+      egNote.style.padding="0 0 6px"; egNote.style.fontSize="10px";
+      egNote.textContent="R1-R4 are rates (speed toward each target, not durations); L1-L4 are the target levels themselves, not ADSR stages.";
+      egSec.appendChild(egNote);
       var envSvgHost=document.createElement("div"); envSvgHost.className="envviz"; egSec.appendChild(envSvgHost);
       var rateRow=document.createElement("div"); rateRow.className="grid4"; egSec.appendChild(rateRow);
       var levelRow=document.createElement("div"); levelRow.className="grid4"; egSec.appendChild(levelRow);
