@@ -95,7 +95,11 @@
 
   <div class="panel">
     <div class="subsec" style="margin-top:0">
-      <h3 style="border-top:none;padding-top:0">Global</h3>
+      <h3 style="border-top:none;padding-top:0">Output Mix</h3>
+      <div class="knobs" id="outputMixKnobs"></div>
+    </div>
+    <div class="subsec">
+      <h3>Global</h3>
       <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;">
         <div class="knobs" id="globalKnobs"></div>
         <div id="algoDiagram" title="Algorithm routing (see docs/ALGORITHMS.md for data provenance/confidence)"></div>
@@ -244,6 +248,21 @@ function makeSelect(key, label, options, host){
   wrap.appendChild(sel); wrap.appendChild(lbl);
   host.appendChild(wrap);
   return { set:function(v){ sel.value=Math.round(v); } };
+}
+
+/* mix.channel's wire protocol is literal "L"/"R"/"L+R" strings (see
+ * dx7_host.cpp's handle_mix_set/handle_mix_get), not the numeric enum
+ * indices makeSelect sends -- a small bespoke control instead of forcing
+ * it through code that assumes indices. */
+function makeChannelSelect(label, host){
+  var wrap=document.createElement("div"); wrap.className="knob"; wrap.style.width="76px";
+  var sel=document.createElement("select"); sel.style.width="100%"; sel.style.fontSize="10px";
+  ["L","R","L+R"].forEach(function(o){ var op=document.createElement("option"); op.value=o; op.textContent=o; sel.appendChild(op); });
+  var lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=label;
+  sel.onchange=function(){ setParam("mix.channel", sel.value); };
+  wrap.appendChild(sel); wrap.appendChild(lbl);
+  host.appendChild(wrap);
+  return { set:function(v){ sel.value=(v==="L"||v==="R")?v:"L+R"; } };
 }
 
 /* ---------------------------------------------------------------------
@@ -499,6 +518,21 @@ function seedKnobs(list){
     getParam(p.key).then(function(v){ if(v!=null && v!=="") ref.set(parseFloat(v)); });
   });
 }
+/* Output Mix: host-level forceAudioIn.so per-voice mix controls
+ * (mix.enabled/mix.gain/mix.channel), NOT chain_params -- intercepted by
+ * dx7_host's own control socket before ever reaching the DSP (see
+ * dx7_host.cpp's handle_mix_set/handle_mix_get). Independent of the
+ * chain_params fetch below since these keys never appear in it. */
+(function buildOutputMix(){
+  var host = document.getElementById("outputMixKnobs");
+  var onRef = makeSelect("mix.enabled", "Voice Out", ["Off","On"], host);
+  var chRef = makeChannelSelect("Channel", host);
+  var gainRef = makeKnob("mix.gain", "Voice Vol", 0, 150, host);
+  getParam("mix.enabled").then(function(v){ if(v!=null && v!=="") onRef.set(parseFloat(v)); });
+  getParam("mix.channel").then(function(v){ if(v!=null && v!=="") chRef.set(v.trim()); });
+  getParam("mix.gain").then(function(v){ if(v!=null && v!=="") gainRef.set(parseFloat(v)); });
+})();
+
 var pDescribeList=null;
 fetch("/describe").then(function(r){ return r.ok ? r.json() : []; })
   .then(function(list){

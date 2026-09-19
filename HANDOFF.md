@@ -1,4 +1,42 @@
-# force-dx7 — v1.0
+# force-dx7 — v1.1
+
+## UPDATE 2026-09-20 (v1.1.0): full shadow-mode GUI
+
+The on-device touchscreen page (force-shadow, `addon/shadow_page.conf`) grew
+from a 4-knob proof of concept into the full DX7 editor: **8 tabs** --
+GLOBAL, OP1-OP6, BANKS -- in an LCD-style cyan-on-slate theme (deliberately
+unlike Maze Voice's), with a live **bank readout (tap = BANKS tab) and patch
+stepper in the top bar** of every tab.
+
+- **GLOBAL:** voice (algorithm, feedback, output, octave, transpose, osc
+  sync, Voice Out/Vol), LFO (5 knobs over waveform + key sync), pitch EG with
+  its graph and rate knobs stacked over level knobs.
+- **OP1-OP6:** oscillator, key scaling (breakpoint, depths, curves), and an
+  envelope graph over stacked RATE/LEVEL knobs.
+- **BANKS:** paged bank grid with an A-Z jump strip (page count follows the
+  number of `.syx` files in `banks/`), plus the current bank's 32 patches.
+- Values, bank and patch names are read back from `dx7_host` over the
+  control socket, so a patch load (from anywhere) updates every knob.
+- `addon/shadow_page.conf` is **generated** by `scripts/gen_shadow_page.py`
+  -- edit the script and rerun it. Needs the matching `force-shadow` build
+  (list/stepper/readout widgets, themes, hinted font); see that repo's
+  `docs/adding-a-page.md` for the file format.
+- Not on the shadow page: the Output Mix *channel* (L / R / L+R) -- the host
+  wants literal text there and the page's `int_values` mode sends indices.
+  Voice Out and Voice Vol are there.
+- Engine must be running (ENGINE button on the page) for names/values to
+  appear; with it off the page shows placeholders.
+- Deploy note: upload `shadow_page.conf` and `force_shadow.so` under a
+  temporary name and `mv` them into place, then restart MPC
+  (`systemctl restart acvs`) and confirm `force_shadow.so` is in MPC's
+  `LD_PRELOAD` -- see force-shadow's DESIGN.md, live load test #26.
+- `dist/ForceDX7` now includes `shadow_page.conf` and the current web UI.
+- **Known issue (not fixed):** `nodeserver-integration/forcedx7.js` (and the
+  Maze equivalents in force-maze) redirect to a hard-coded
+  `http://192.168.1.187:<port>/`. The Force's DHCP address changes (it has
+  been `.187` and `.44`), which breaks that home-page link; the fix is to
+  build the URL from `req.headers.host`. Untested on device, so left as is.
+
 
 ## ⚠️ UPDATE 2026-09-17 (resolved): fixed-128-block re-derived, confirmed clean by ear, rename+labels back in
 
