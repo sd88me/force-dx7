@@ -15,6 +15,9 @@ stepper in the top bar** of every tab.
   envelope graph over stacked RATE/LEVEL knobs.
 - **BANKS:** paged bank grid with an A-Z jump strip (page count follows the
   number of `.syx` files in `banks/`), plus the current bank's 32 patches.
+- **Draggable envelope graphs (2026-09-20):** the EG graphs on GLOBAL (pitch EG) and OP1-OP6 now have handles --
+  drag a point: x = rate, y = level. The RATE/LEVEL knobs stay and remain in sync in both directions.
+  Fixed time scale (a full-length EG fills the graph). Needs the matching `force-shadow` build; no page change.
 - Values, bank and patch names are read back from `dx7_host` over the
   control socket, so a patch load (from anywhere) updates every knob.
 - `addon/shadow_page.conf` is **generated** by `scripts/gen_shadow_page.py`
