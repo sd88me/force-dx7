@@ -4,11 +4,11 @@
 #
 # Ported Schwung "Dexed" DSP synth (Yamaha DX7 FM synthesis via Google's MSFA
 # engine). dx7_host renders it via its native v2 plugin API and writes audio
-# into a shared-memory ring that the separate ForceAudioIn addon's
-# forceAudioIn.so (LD_PRELOAD'd into MPC) mixes into what MPC reads from its
+# into a shared-memory ring that the separate ForceAudioJack addon's
+# forceAudioJack.so (LD_PRELOAD'd into MPC) mixes into what MPC reads from its
 # capture device.
 #
-# This addon does NOT touch LD_PRELOAD or restart acvs - ForceAudioIn owns
+# This addon does NOT touch LD_PRELOAD or restart acvs - ForceAudioJack owns
 # arming the shared tap exclusively (enable it separately, once; see its own
 # README.md). dx7_host itself is started/stopped entirely from the
 # nodeServer Modules page (/moduler) - never from this script, and never at
@@ -52,7 +52,7 @@ if [ "$mode" = "DISABLE" ]; then
 fi
 
 if [ "$mode" = "ENABLE" ]; then
-    echo "$appTitle enabled. Make sure the separate ForceAudioIn addon is"
+    echo "$appTitle enabled. Make sure the separate ForceAudioJack addon is"
     echo "also enabled (its own manage.sh ENABLE) - it arms the shared tap"
     echo "this addon needs. Start the voice itself from the nodeServer"
     echo "Modules page (/moduler), not from here."
@@ -70,7 +70,7 @@ echo
 echo "Status:"
 ps 2>/dev/null | grep -q "[d]x7_host" && echo "  voice: RUNNING" || echo "  voice: stopped"
 echo "  start/stop from the nodeServer Modules page (/moduler) - requires"
-echo "  the separate ForceAudioIn addon to be enabled first."
+echo "  the separate ForceAudioJack addon to be enabled first."
 echo "  web UI is a separate addon - see web/manage.sh (survives this being disabled)"
-echo "  logs: /tmp/forceAudioIn.log (mix tap, in the ForceAudioIn addon), /tmp/dx7_host.log (synth)"
+echo "  logs: /tmp/forceAudioJack.log (mix tap, in the ForceAudioJack addon), /tmp/dx7_host.log (synth)"
 echo "  control socket: /tmp/dx7_ctrl.sock"
