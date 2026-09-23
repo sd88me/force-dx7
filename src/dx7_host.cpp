@@ -11,7 +11,7 @@
  *   render_block() per SPI-callback block  wall-clock timer thread -> render_block()
  *   set_param(key, "64") from a knob       a local control socket, or CC on
  *                                          the control channel -> set_param()
- *   int16 stereo out via the mailbox       float32 into ForceAudioIn's shared-
+ *   int16 stereo out via the mailbox       float32 into ForceAudioJack's shared-
  *                                          memory ring (forceAudioInject.h)
  *
  * dx7_plugin.cpp + msfa/*.cc are vendored VERBATIM from schwung-dx7 — unlike
@@ -260,7 +260,7 @@ constexpr double RATE_CORRECTION = 1.0;
  * The earlier attempt drained however many 128-frame chunks were owed (up
  * to 32 back-to-back) in one unpaced tight loop within a single wake, no
  * sleep between chunks -- that got the ring stuck at a ~4400-frame backlog
- * immediately on every fresh start (forceAudioIn.so's hysteresis-trim
+ * immediately on every fresh start (forceAudioJack.so's hysteresis-trim
  * never triggered to correct it) and sounded worse than the grit it fixed.
  *
  * This version keeps a fractional "frame debt" owed since the last chunk,
@@ -498,7 +498,7 @@ static void usage(const char *me) {
         "  --module-dir PATH     dir containing module.json + banks/ (default: .)\n"
         "  --ctrl-sock PATH      control socket path     (default: /tmp/dx7_ctrl.sock)\n"
         "  --control-channel N   1-16, CC-in for the Q-Link track (default: 1)\n"
-        "  --mix-slot N          voice slot 0..%d for forceAudioIn.so (default: 2 -\n"
+        "  --mix-slot N          voice slot 0..%d for forceAudioJack.so (default: 2 -\n"
         "                        0 is force-maze's own default, 1 is force-jv880's)\n",
         me, AI_MAX_VOICES - 1);
 }
@@ -561,7 +561,7 @@ int main(int argc, char **argv) {
     fprintf(stderr,
         "[dx7] up. port '%s:In (Mockba)'  ctrl socket %s  shm %s  ctrl ch %d\n"
         "[dx7] route a MIDI track to '%s:In (Mockba)' for notes and CC (Q-Link); audio\n"
-        "[dx7] is mixed into the Force's capture input via ForceAudioIn (must be enabled).\n",
+        "[dx7] is mixed into the Force's capture input via ForceAudioJack (must be enabled).\n",
         client.c_str(), g_ctrl_sock_path.c_str(), g_shm_name_in, g_ctrl_ch + 1, client.c_str());
 
     std::thread timer(timer_loop);

@@ -44,7 +44,7 @@ theme_lcd=07100f
 engine_process_name=dx7_host
 engine_nsmodule_path=/media/662522/AddOns/ForceDX7/NSMODULE.json
 engine_dirname=ForceDX7
-engine_arguments_json=[{"NAME":"module-dir flag","VALUE":"--module-dir"},{"NAME":"module directory (module.json/banks source)","VALUE":"/media/662522/AddOns/ForceDX7"},{"NAME":"ctrl-sock flag","VALUE":"--ctrl-sock"},{"NAME":"control socket path","VALUE":"/tmp/dx7_ctrl.sock"},{"NAME":"control-channel flag","VALUE":"--control-channel"},{"NAME":"Q-Link control channel (1-16)","VALUE":"1"},{"NAME":"mix-slot flag","VALUE":"--mix-slot"},{"NAME":"ForceAudioIn voice slot (0-3; 2, since 0=Maze Voice, 1=JV-880)","VALUE":"2"}]
+engine_arguments_json=[{"NAME":"module-dir flag","VALUE":"--module-dir"},{"NAME":"module directory (module.json/banks source)","VALUE":"/media/662522/AddOns/ForceDX7"},{"NAME":"ctrl-sock flag","VALUE":"--ctrl-sock"},{"NAME":"control socket path","VALUE":"/tmp/dx7_ctrl.sock"},{"NAME":"control-channel flag","VALUE":"--control-channel"},{"NAME":"Q-Link control channel (1-16)","VALUE":"1"},{"NAME":"mix-slot flag","VALUE":"--mix-slot"},{"NAME":"ForceAudioJack voice slot (0-3; 2, since 0=Maze Voice, 1=JV-880)","VALUE":"2"}]
 '''
 
 BODY_Y = 88         # content starts right under the top bar
