@@ -112,17 +112,21 @@ multi-run investigation done for Force DX7 specifically (see
 but the underlying convention — and the reason autoload is disabled — is
 identical.
 
-## Touchscreen page
+## Touchscreen GUI (shadow mode)
 
-`addon/shadow_page.conf` defines this module's on-device control page for
-[force-shadow](https://github.com/sd88me/force-shadow) (`SHIFT+SCENE-3`),
-with **8 tabs**: **GLOBAL** (algorithm, feedback, output, octave, transpose,
-osc sync, LFO, pitch EG), **OP1–OP6** (oscillator, key scaling, and a
-draggable rate/level envelope graph per operator), and **BANKS** (a paged
-bank grid with an A–Z jump strip and the current bank's 32 patches). A live
-bank readout and patch stepper sit in the top bar of every tab, reading back
-values from `dx7_host` over the control socket so a patch load from
-anywhere updates every knob.
+A full editor page for the Force's own touchscreen, rendered by
+[`force-shadow`](https://github.com/sd88me/force-shadow): open it with
+`SHIFT+SCENE-3`, start/stop the engine from the ENGINE cell in the top bar.
+An LCD-style cyan-on-slate theme, with a live bank readout (tap = BANKS tab)
+and patch stepper in the top bar of every tab, reading back values from
+`dx7_host` over the control socket so a patch load from anywhere updates
+every knob.
+
+| Tab | Contents |
+|-----|----------|
+| GLOBAL | Voice (algorithm, feedback, output, octave, transpose, osc sync), LFO (waveform, key sync, speed/delay/depth), pitch EG with its graph and rate/level knobs |
+| OP1–OP6 | Oscillator, key scaling (breakpoint, depths, curves), and a **draggable rate/level envelope graph** (drag a point: x = rate, y = level) |
+| BANKS | Paged bank grid with an A–Z jump strip, plus the current bank's 32 patches |
 
 The page is **generated** by `scripts/gen_shadow_page.py` — edit the script
 and rerun it rather than hand-editing `shadow_page.conf` directly:
