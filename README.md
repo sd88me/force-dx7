@@ -116,7 +116,7 @@ identical.
 
 A full editor page for the Force's own touchscreen, rendered by
 [`force-shadow`](https://github.com/sd88me/force-shadow): open it with
-`SHIFT+SCENE-3`, start/stop the engine from the ENGINE cell in the top bar.
+`SHIFT+SCENE-2`, start/stop the engine from the ENGINE cell in the top bar.
 An LCD-style cyan-on-slate theme, with a live bank readout (tap = BANKS tab)
 and patch stepper in the top bar of every tab, reading back values from
 `dx7_host` over the control socket so a patch load from anywhere updates
