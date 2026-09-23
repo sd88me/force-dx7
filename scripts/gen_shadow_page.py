@@ -105,14 +105,14 @@ def env_panel(x, y, w, h, title, prefix, name, graph_h, r, cy_r, cy_l):
 def global_tab():
     emit('[tab GLOBAL]')
     topbar()
-    h, gap = 172, 12
+    h, gap = 210, 12
     y1 = BODY_Y
     y2 = y1 + h + gap
     h2 = BODY_Y + BODY_H - y2
 
     frame(L, y1, R - L, h, "VOICE")
-    cy = y1 + 92
-    xs = row(8, L, R)
+    cy = y1 + 76
+    xs = row(7, L, R)
     knob(xs[0], cy, 32, "ALGORITHM", "algorithm", 1, 32, 0)
     knob(xs[1], cy, 32, "FEEDBACK", "feedback", 0, 7, 0)
     knob(xs[2], cy, 32, "OUTPUT", "output_level", 0, 100)
@@ -120,7 +120,15 @@ def global_tab():
     knob(xs[4], cy, 32, "TRANSPOSE", "transpose", 0, 48)
     toggle(xs[5], cy, "OSC SYNC", "osc_sync")
     knob(xs[6], cy, 32, "VOICE VOL", "mix.gain", 0, 150, 40)
-    toggle(xs[7], cy, "VOICE OUT", "mix.enabled")
+    # Voice on/off removed here (redundant with the ENGINE power switch);
+    # DEST replaces the old L/R/L+R channel notion with the destination
+    # bus/channel a voice lands on (see forceAudioInject.h): I1, I2, I1+2
+    # (stereo into Audio-In 1/2), O3, O4, O3+4 (stereo into Out 3/4) - I/O
+    # prefix kept short (no "IN"/"OUT") so all 6 options still fit the
+    # frame at a legible width; "+" not "," between paired numbers only
+    # because enum_h's options list is itself comma-delimited - see web
+    # GUI for the spelled-out "IN1,2"/"OUT3,4" labels.
+    enum_h((L + R) // 2, y1 + 185, "DEST", "mix.dest_idx", ["I1", "I2", "O3", "O4", "I1+2", "O3+4"], 60)
 
     # LFO: half width, five knobs over the waveform selector + sync
     lw = 580

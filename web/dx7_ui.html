@@ -250,19 +250,22 @@ function makeSelect(key, label, options, host){
   return { set:function(v){ sel.value=Math.round(v); } };
 }
 
-/* mix.channel's wire protocol is literal "L"/"R"/"L+R" strings (see
- * dx7_host.cpp's handle_mix_set/handle_mix_get), not the numeric enum
- * indices makeSelect sends -- a small bespoke control instead of forcing
- * it through code that assumes indices. */
-function makeChannelSelect(label, host){
+/* mix.dest's wire protocol is a literal label string (see dx7_host.cpp's
+ * handle_mix_set/handle_mix_get), not the numeric enum indices makeSelect
+ * sends -- a small bespoke control instead of forcing it through code that
+ * assumes indices. Options are which force-audiojack ring (Audio-In 1/2 or
+ * Out 3/4) this voice lands on, and mono/stereo within it -- see
+ * forceAudioInject.h. */
+var MIX_DEST_OPTIONS = ["IN1","IN2","OUT3","OUT4","IN1,2","OUT3,4"];
+function makeDestSelect(label, host){
   var wrap=document.createElement("div"); wrap.className="knob"; wrap.style.width="76px";
   var sel=document.createElement("select"); sel.style.width="100%"; sel.style.fontSize="10px";
-  ["L","R","L+R"].forEach(function(o){ var op=document.createElement("option"); op.value=o; op.textContent=o; sel.appendChild(op); });
+  MIX_DEST_OPTIONS.forEach(function(o){ var op=document.createElement("option"); op.value=o; op.textContent=o; sel.appendChild(op); });
   var lbl=document.createElement("div"); lbl.className="lbl"; lbl.textContent=label;
-  sel.onchange=function(){ setParam("mix.channel", sel.value); };
+  sel.onchange=function(){ setParam("mix.dest", sel.value); };
   wrap.appendChild(sel); wrap.appendChild(lbl);
   host.appendChild(wrap);
-  return { set:function(v){ sel.value=(v==="L"||v==="R")?v:"L+R"; } };
+  return { set:function(v){ sel.value=MIX_DEST_OPTIONS.indexOf(v)>=0 ? v : "IN1,2"; } };
 }
 
 /* ---------------------------------------------------------------------
@@ -518,18 +521,17 @@ function seedKnobs(list){
     getParam(p.key).then(function(v){ if(v!=null && v!=="") ref.set(parseFloat(v)); });
   });
 }
-/* Output Mix: host-level forceAudioIn.so per-voice mix controls
- * (mix.enabled/mix.gain/mix.channel), NOT chain_params -- intercepted by
- * dx7_host's own control socket before ever reaching the DSP (see
- * dx7_host.cpp's handle_mix_set/handle_mix_get). Independent of the
- * chain_params fetch below since these keys never appear in it. */
+/* Output Mix: host-level forceAudioJack.so per-voice mix controls
+ * (mix.gain/mix.dest), NOT chain_params -- intercepted by dx7_host's own
+ * control socket before ever reaching the DSP (see dx7_host.cpp's
+ * handle_mix_set/handle_mix_get). Independent of the chain_params fetch
+ * below since these keys never appear in it. Voice Out (mix.enabled)
+ * removed: redundant with the engine power switch. */
 (function buildOutputMix(){
   var host = document.getElementById("outputMixKnobs");
-  var onRef = makeSelect("mix.enabled", "Voice Out", ["Off","On"], host);
-  var chRef = makeChannelSelect("Channel", host);
+  var destRef = makeDestSelect("Destination", host);
   var gainRef = makeKnob("mix.gain", "Voice Vol", 0, 150, host);
-  getParam("mix.enabled").then(function(v){ if(v!=null && v!=="") onRef.set(parseFloat(v)); });
-  getParam("mix.channel").then(function(v){ if(v!=null && v!=="") chRef.set(v.trim()); });
+  getParam("mix.dest").then(function(v){ if(v!=null && v!=="") destRef.set(v.trim()); });
   getParam("mix.gain").then(function(v){ if(v!=null && v!=="") gainRef.set(parseFloat(v)); });
 })();
 
