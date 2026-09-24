@@ -87,7 +87,8 @@ steps 1 and 2 below on the device.
    This is equivalent to, and replaces, manually running:
    ```
    ssh root@<force-ip> 'rm -rf /media/662522/AddOns/ForceDX7'
-   scp -r addon root@<force-ip>:/media/662522/AddOns/ForceDX7
+   scripts/package.sh --stage /tmp/dx7   # addon/ + build/dx7_host + web/
+   scp -r /tmp/dx7/AddOns/ForceDX7 root@<force-ip>:/media/662522/AddOns/ForceDX7
    ssh root@<force-ip> '/media/662522/AddOns/ForceDX7/manage.sh ENABLE'
    ssh root@<force-ip> '/media/662522/AddOns/ForceDX7/web/manage.sh ENABLE'   # web panel
    ```
