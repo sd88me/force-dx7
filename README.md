@@ -65,6 +65,15 @@ selected in Output Mix (see Requirements below). Control it from any of:
 
 ## Installation
 
+**From a release (no build needed):** download `ForceDX7-<version>.zip`
+from the Releases page (under *Assets*, not the "Source code" archives) and
+unzip it onto the SD card root, overwriting the old files in
+`AddOns/ForceDX7` (your banks stay put). Put any `.syx` banks in
+`AddOns/ForceDX7/banks/`. Then run the `manage.sh ENABLE` commands from
+steps 1 and 2 below on the device.
+
+**From a checkout:**
+
 1. **Enable the shared audio tap** (once, even if another voice addon
    already needs it):
    ```
